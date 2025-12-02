@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interfaccia App Base</title>
+    <!-- Carica Tailwind CSS dal CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Collega il foglio di stile esterno -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="min-h-screen p-4 flex flex-col items-center justify-center">
+
+        <!-- 1. BOX GATE (Richiesta Password "seria") -->
+        <div id="gate-box" class="football-box w-full max-w-sm transition duration-500 hidden-on-load">
+            <h2 class="text-2xl font-bold text-green-400 mb-6 text-center border-b-2 border-green-600 pb-2">Accesso Riservato - Il Campo Ti Aspetta</h2>
+            <p class="text-gray-300 mb-4 text-sm text-center">Inserisci la password seria per sbloccare la panchina.</p>
+            
+            <input type="password" id="gate-password" placeholder="Password seria"
+                   class="w-full p-3 border border-green-600 rounded-lg focus:ring-green-400 focus:border-green-400 bg-gray-700 text-white mb-4 shadow-inner-dark">
+            
+            <button id="gate-button"
+                    class="w-full bg-green-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-green-400 transition duration-150 transform hover:scale-[1.02]">
+                Inizia il Riscaldamento Serio
+            </button>
+            
+            <p id="gate-message" class="text-center mt-3 text-red-400"></p>
+        </div>
+
+        <!-- 2. BOX LOGIN (Nome Squadra / Password) -->
+        <div id="login-box" class="football-box w-full max-w-sm transition duration-500 hidden-on-load">
+            <h2 class="text-2xl font-bold text-yellow-400 mb-6 text-center border-b-2 border-yellow-600 pb-2">Seleziona la Tua Squadra</h2>
+            
+            <input type="text" id="login-username" placeholder="Nome Squadra / Email Admin"
+                   class="w-full p-3 border border-yellow-600 rounded-lg focus:ring-yellow-400 focus:border-yellow-400 bg-gray-700 text-white mb-4 shadow-inner-dark">
+
+            <input type="password" id="login-password" placeholder="Password (Qualsiasi per la creazione)"
+                   class="w-full p-3 border border-yellow-600 rounded-lg focus:ring-yellow-400 focus:border-yellow-400 bg-gray-700 text-white mb-6 shadow-inner-dark">
+            
+            <button id="login-button"
+                    class="w-full bg-yellow-400 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-300 transition duration-150 transform hover:scale-[1.02] mb-4">
+                Accedi
+            </button>
+            
+            <!-- BOTTONI PUBBLICI -->
+            <div class="grid grid-cols-2 gap-2">
+                <button id="btn-leaderboard"
+                        class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg shadow-md hover:bg-blue-400 transition duration-150 transform hover:scale-[1.02]">
+                    Classifica
+                </button>
+                <button id="btn-schedule"
+                        class="w-full bg-teal-500 text-white font-semibold py-2 rounded-lg shadow-md hover:bg-teal-400 transition duration-150 transform hover:scale-[1.02]">
+                    Calendario Partite
+                </button>
+            </div>
+            
+            <p id="login-message" class="text-center mt-3 text-red-400"></p>
+        </div>
+
+        <!-- 3. CONTENUTO PRINCIPALE DELL'APP - Dashboard Squadra -->
+        <div id="app-content" class="football-box w-full max-w-2xl transition duration-500 hidden-on-load">
+            <h2 id="team-dashboard-title" class="text-4xl font-extrabold text-green-400 text-center mb-4">Area Tecnica (Dashboard)</h2>
+            <p id="team-welcome-message" class="text-center text-lg text-gray-300">Caricamento dati squadra...</p>
+            
+            <!-- Pulsanti di Navigazione Squadra -->
+            <div class="mt-8 grid grid-cols-3 gap-4">
+                <button id="btn-gestione-rosa"
+                        class="bg-green-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-green-500 transition duration-150 transform hover:scale-[1.01]">
+                    Gestione Rosa
+                </button>
+                <button id="btn-gestione-formazione"
+                        class="bg-indigo-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-indigo-500 transition duration-150 transform hover:scale-[1.01]">
+                    Gestione Formazione
+                </button>
+                <button id="btn-draft-utente"
+                        class="bg-yellow-600 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-500 transition duration-150 transform hover:scale-[1.01]">
+                    Draft
+                </button>
+            </div>
+
+            <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-green-500 text-center shadow-lg">
+                <p class="text-white font-semibold">Sei in Area Utente standard. ID Firestore: <span id="team-firestore-id">N/A</span></p>
+            </div>
+            
+            <button id="user-logout-button"
+                    class="mt-6 w-full bg-yellow-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-400 transition duration-150 transform hover:scale-[1.02]">
+                Logout
+            </button>
+        </div>
+        
+        <!-- 4. CONTENUTO AREA AMMINISTRATORE - NASCOSTO -->
+        <div id="admin-content" class="football-box w-full max-w-3xl transition duration-500 hidden-on-load">
+            <h2 class="text-4xl font-extrabold text-red-500 text-center mb-4 border-b-4 border-red-700 pb-2">Area Amministrazione (Panchina Lunga)</h2>
+            <p id="admin-welcome-message" class="text-center text-xl text-gray-300 mb-6">Pannello di Controllo Squadre Registrate</p>
+            
+            <!-- Contenitore per le squadre -->
+            <div id="admin-dashboard-container" class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 shadow-xl">
+                <!-- Il layout è generato da admin.js -->
+                <p class="text-gray-400 text-center">Inizializzazione...</p>
+            </div>
+            
+            <button id="admin-logout-button"
+                    class="mt-6 w-full bg-red-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-400 transition duration-150 transform hover:scale-[1.02]">
+                Logout Admin
+            </button>
+        </div>
+        
+        <!-- 5. CONTENUTO AREA DRAFT (Admin/Utente) - NASCOSTO -->
+        <div id="draft-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-yellow-400 text-center mb-4 border-b-4 border-yellow-700 pb-2">Gestione Draft Calciatori</h2>
+             <div id="draft-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Strumenti di gestione Draft in caricamento...</p>
+             </div>
+             <button id="draft-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna al Pannello Admin
+            </button>
+        </div>
+        
+        <!-- 6. CONTENUTO AREA CLASSIFICA - NASCOSTO -->
+        <div id="leaderboard-content" class="football-box w-full max-w-2xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-blue-400 text-center mb-4 border-b-4 border-blue-700 pb-2">Classifica Generale Lega</h2>
+             <p class="text-center text-lg text-gray-300">Qui vedrai la classifica aggiornata di tutte le squadre.</p>
+             <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-blue-500 text-center shadow-lg">
+                <p class="text-white font-semibold">I dati della classifica saranno caricati qui.</p>
+             </div>
+             <button id="leaderboard-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna al Login
+            </button>
+        </div>
+        
+        <!-- 7. CONTENUTO AREA CALENDARIO - NASCOSTO -->
+        <div id="schedule-content" class="football-box w-full max-w-2xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-teal-400 text-center mb-4 border-b-4 border-teal-700 pb-2">Calendario Partite</h2>
+             <p class="text-center text-lg text-gray-300">Consulta qui le sfide e i risultati di ogni giornata.</p>
+             <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-teal-500 text-center shadow-lg">
+                <p class="text-white font-semibold">I dati del calendario saranno caricati qui.</p>
+             </div>
+             <button id="schedule-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna al Login
+            </button>
+        </div>
+
+        <!-- 8. CONTENUTO AREA IMPOSTAZIONI CAMPIONATO - NASCOSTO -->
+        <div id="championship-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-orange-400 text-center mb-4 border-b-4 border-orange-700 pb-2">Impostazioni e Regole Campionato</h2>
+             <div id="championship-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Strumenti di gestione Campionato in caricamento...</p>
+             </div>
+             <button id="championship-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna al Pannello Admin
+            </button>
+        </div>
+
+        <!-- 9. CONTENUTO AREA GESTIONE SQUADRA (Rosa e Formazione) -->
+        <div id="squadra-content" class="football-box w-full max-w-5xl transition duration-500 hidden-on-load">
+             <h2 id="squadra-main-title" class="text-4xl font-extrabold text-green-400 text-center mb-4 border-b-4 border-green-700 pb-2">Gestione Rosa</h2>
+             <p id="squadra-subtitle" class="text-center text-lg text-gray-300 mb-6">Visualizza e gestisci i tuoi calciatori.</p>
+             
+             <!-- Contenitore logica Gestione Rosa o Formazione -->
+             <div id="squadra-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Contenuto in caricamento...</p>
+             </div>
+             
+             <button id="squadra-back-button"
+                    class="mt-6 w-full bg-yellow-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-400 transition duration-150 transform hover:scale-[1.02]">
+                Torna alla Dashboard
+            </button>
+        </div>
+
+
+    </main>
+
+    <!-- Logo che Scorrerà con la Pagina - SPOSTATO ALL'INTERNO DI <main> -->
+    <img id="footer-logo" 
+         src="https://github.com/carciofiatomici-bot/immaginiserie/blob/main/serie%20sera%20256.png?raw=true" 
+         alt="Logo in fondo alla pagina">
+
+    <!-- INIZIALIZZAZIONE FIREBASE e AUTH/DB -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; 
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Imposta il livello di log (utile per il debug)
+        setLogLevel('Debug');
+
+        // Variabili globali fornite dall'ambiente Canvas
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+
+        // Configurazione e inizializzazione standard (inclusa la tua config come fallback per i test locali)
+        window.firebaseConfig = {
+            apiKey: "AIzaSyDL0n4qFzpPd3v-aoJoI_GJCQ_hlpwbaSA",
+            authDomain: "lega-fantacalcio-unica-2024.firebaseapp.com",
+            projectId: "lega-fantacalcio-unica-2024",
+            storageBucket: "lega-fantacalcio-unica-2024.firebasestorage.app",
+            messagingSenderId: "219665032240",
+            appId: "1:219665032240:web:14cfa85e5186384cc339f5",
+            measurementId: "G-4WFPVEF886",
+            // Unisce la configurazione fornita dal Canvas (se disponibile e valida)
+            ...firebaseConfig
+        };
+        
+        // Inizializzazione Firebase
+        window.app = initializeApp(window.firebaseConfig);
+        window.db = getFirestore(window.app);
+        window.auth = getAuth(window.app);
+        // Metodi utili resi globali per accesso da tutti i moduli
+        window.firestoreTools = { doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc, appId }; // AGGIUNTO addDoc nella lista
+        
+        // Funzione globale per cambiare schermata
+        window.showScreen = (elementToShow) => {
+            const boxes = [
+                document.getElementById('gate-box'),
+                document.getElementById('login-box'),
+                document.getElementById('app-content'),
+                document.getElementById('admin-content'),
+                document.getElementById('draft-content'),
+                document.getElementById('leaderboard-content'),
+                document.getElementById('schedule-content'),
+                document.getElementById('championship-content'),
+                document.getElementById('squadra-content')
+            ];
+            boxes.forEach(box => {
+                if (box) {
+                    box.classList.add('hidden');
+                    box.classList.add('hidden-on-load');
+                }
+            });
+            if (elementToShow) {
+                elementToShow.classList.remove('hidden');
+                elementToShow.classList.remove('hidden-on-load');
+            }
+        };
+
+
+        // Funzione per l'autenticazione iniziale (necessaria per accedere a Firestore)
+        async function initialAuth() {
+            try {
+                // Tenta di autenticare con il token fornito dall'ambiente (se presente)
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                if (initialAuthToken) {
+                    await signInWithCustomToken(window.auth, initialAuthToken);
+                    console.log("Autenticazione Firebase riuscita con token personalizzato.");
+                } else {
+                    // Altrimenti, usa l'accesso anonimo come fallback
+                    await signInAnonymously(window.auth);
+                    console.log("Autenticazione Firebase riuscita in modalità anonima.");
+                }
+            } catch (error) {
+                console.error("Errore durante l'autenticazione iniziale:", error);
+                // In caso di errore critico, si può mostrare un messaggio di fallback all'utente
+            }
+        }
+        
+        initialAuth();
+
+    </script>
+    
+    <!-- Collega gli script JavaScript esterni - DEVE ESSERE DOPO GLI SCRIPT FIREBASE -->
+    <script src="interfaccia.js"></script>
+    <script src="admin.js"></script> 
+    <script src="draft.js"></script> 
+    <script src="campionato.js"></script> 
+    <script src="gestionesquadre.js"></script>
+</body>
+</html>

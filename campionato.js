@@ -26,7 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Helper per generare l'HTML del logo
-     * Tenta di usare la funzione globale di interfaccia.js per i loghi
      */
     const getLogoHtml = (teamId) => {
         if (window.getLogoHtml) {
@@ -57,11 +56,42 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * Helper per generare un numero intero casuale.
      */
-    const getRandomInt = (min, max) => {
-        min = Math.ceil(min);
-        max = Math.floor(max);
-        return Math.floor(Math.random() * (max - min + 1)) + min;
+    const getRandomInt = window.getRandomInt; // Usa il getter globale
+
+
+    // --- NUOVA LOGICA: FUNZIONI FORMA E PUNTEGGIO TATTICO ---
+    
+    /**
+     * Genera un modificatore di forma casuale tra -3 e +3.
+     */
+    const getRandomFormModifier = () => {
+        const mod = getRandomInt(-3, 3);
+        let icon = 'text-gray-400 fas fa-minus-circle'; // Default 0
+        if (mod > 0) icon = 'text-green-500 fas fa-arrow-circle-up';
+        if (mod < 0) icon = 'text-red-500 fas fa-arrow-circle-down';
+        
+        return { modifier: mod, icon: icon };
     };
+
+    /**
+     * Calcola il punteggio tattico di una squadra basato sul livello medio dei titolari (con forma applicata).
+     * @param {Array<Object>} titolari - Array di giocatori titolari (con livello già modificato dalla forma).
+     * @returns {number} Il punteggio tattico arrotondato.
+     */
+    const calculateTeamTacticScoreLocal = (titolari) => {
+        if (!titolari || titolari.length !== 5) {
+             // 1 punto se la formazione è incompleta (forte malus)
+             return 1; 
+        }
+        
+        // Utilizza la funzione globale calculateAverageLevel che gestisce p.level o p.currentLevel
+        const avgLevel = window.calculateAverageLevel ? window.calculateAverageLevel(titolari) : 1; 
+        
+        // Punteggio Tattico (Livello Medio arrotondato)
+        return Math.max(1, Math.round(avgLevel)); 
+    };
+
+    // --- FINE NUOVA LOGICA ---
     
     /**
      * Funzione principale per disegnare l'interfaccia Campionato.
@@ -297,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     /**
-     * Inizializza la classifica (Leaderboard) con tutte le squadre partecipanti a zero.
+     * Inizializza le statistiche di una squadra (Leaderboard) con tutte le squadre partecipanti a zero.
      */
     const initializeLeaderboard = async (teams) => {
         const { doc, setDoc } = firestoreTools;
@@ -348,17 +378,74 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mappa per un accesso rapido
             const standingsMap = new Map(standings.map(s => [s.teamId, s]));
             
-            // 2. Simula e aggiorna la giornata
-            nextRound.matches.forEach(match => {
-                // Simulazione risultato: gol casuale tra 0 e 5
-                const homeGoals = getRandomInt(0, 5);
-                const awayGoals = getRandomInt(0, 5);
+            // --- FUNZIONE LOCALE PER APPLICARE LA FORMA ---
+            const applyForm = (teamData) => {
+                // Assicurati di usare i giocatori dalla formazione (i titolari)
+                const titolari = teamData.formation?.titolari || []; 
+                
+                return titolari.map(player => {
+                    const form = getRandomFormModifier();
+                    return { 
+                        ...player, 
+                        // Imposta il livello effettivo per la simulazione
+                        currentLevel: Math.max(1, player.level + form.modifier), 
+                        formModifier: form.modifier, 
+                        formIcon: form.icon
+                    };
+                });
+            };
+            // --- FINE FUNZIONE LOCALE ---
 
+
+            // 2. Simula e aggiorna la giornata
+            for (const match of nextRound.matches) {
+                
+                // 2.1. Recupera i dati completi di entrambe le squadre per ottenere la formazione
+                const [homeTeamDoc, awayTeamDoc] = await Promise.all([
+                    getDoc(doc(db, TEAMS_COLLECTION_PATH, match.homeId)),
+                    getDoc(doc(db, TEAMS_COLLECTION_PATH, match.awayId))
+                ]);
+                
+                const homeTeamData = homeTeamDoc.exists() ? homeTeamDoc.data() : null;
+                const awayTeamData = awayTeamDoc.exists() ? awayTeamDoc.data() : null;
+                
+                if (!homeTeamData || !awayTeamData) {
+                    console.warn(`Dati squadra mancanti per il match ${match.homeName} vs ${match.awayName}. Salto.`);
+                    continue;
+                }
+
+                // 2.2. Applica la forma e calcola il punteggio tattico
+                const homeTitolariWithForm = applyForm(homeTeamData);
+                const awayTitolariWithForm = applyForm(awayTeamData);
+
+                const homeScore = calculateTeamTacticScoreLocal(homeTitolariWithForm);
+                const awayScore = calculateTeamTacticScoreLocal(awayTitolariWithForm);
+                
+                // Calcolo Gol: 
+                const scoreDifference = homeScore - awayScore;
+                
+                // Base di gol (1-3) + bonus influenzato dalla differenza di punteggio.
+                // Randomness: 0 to 2
+                let homeGoals = getRandomInt(1, 3) + getRandomInt(0, 2); 
+                let awayGoals = getRandomInt(1, 3) + getRandomInt(0, 2);
+
+                // Applica il bonus/malus basato sul punteggio tattico (max +/- 2 gol)
+                if (scoreDifference > 0) {
+                    homeGoals += Math.min(2, scoreDifference);
+                    awayGoals = Math.max(0, awayGoals - 1);
+                } else if (scoreDifference < 0) {
+                    awayGoals += Math.min(2, Math.abs(scoreDifference));
+                    homeGoals = Math.max(0, homeGoals - 1);
+                }
+                
+                // Assicurati che i gol siano >= 0
+                homeGoals = Math.max(0, homeGoals);
+                awayGoals = Math.max(0, awayGoals);
+                
                 match.result = `${homeGoals}-${awayGoals}`;
                 
-                // 3. Aggiorna la classifica SOLO per le squadre partecipanti
+                // 3. Aggiorna la classifica
                 
-                // Troviamo il nome nel team array completo (incluso nel caso in cui la squadra non sia ancora in classifica)
                 const homeTeamName = allTeams.find(t => t.id === match.homeId)?.name || match.homeId;
                 const awayTeamName = allTeams.find(t => t.id === match.awayId)?.name || match.awayId;
 
@@ -391,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 standingsMap.set(match.homeId, homeStats);
                 standingsMap.set(match.awayId, awayStats);
-            });
+            }
             
             // 4. Salva il calendario aggiornato
             await setDoc(scheduleDocRef, { matches: schedule }, { merge: true });

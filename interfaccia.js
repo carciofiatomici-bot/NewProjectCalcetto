@@ -20,6 +20,23 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => document.dispatchEvent(new Event('DOMContentLoaded')), 100);
         return;
     }
+    
+    // --- NUOVO: HELPER GLOBALE PER NUMERI CASUALI ---
+    /**
+     * Helper per generare un numero intero casuale tra min (incluso) e max (incluso).
+     * Esposto globalmente per essere usato da tutti i moduli.
+     * @param {number} min 
+     * @param {number} max 
+     * @returns {number}
+     */
+    const getRandomInt = (min, max) => {
+        min = Math.ceil(min);
+        max = Math.floor(max);
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    };
+    window.getRandomInt = getRandomInt;
+    // --- FINE HELPER GLOBALE ---
+
 
     // Assegna gli oggetti Firebase globali
     auth = window.auth;
@@ -44,6 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const teamLogoElement = document.getElementById('team-logo');
     const nextMatchPreview = document.getElementById('next-match-preview');
     
+    // Nuovi Riferimenti per le Statistiche
+    const statRosaLevel = document.getElementById('stat-rosa-level');
+    const statFormazioneLevel = document.getElementById('stat-formazione-level');
+    const statRosaCount = document.querySelector('#stat-rosa-level').nextElementSibling; // Il p sotto stat-rosa-level
+
+
     // Riferimenti ai pulsanti di navigazione squadra
     const btnGestioneRosa = document.getElementById('btn-gestione-rosa');
     const btnGestioneFormazione = document.getElementById('btn-gestione-formazione');
@@ -102,6 +125,32 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     /**
+     * Calcola il livello medio da una lista di giocatori.
+     * @param {Array<Object>} players - Array di oggetti giocatore con proprietà `level` (o `currentLevel` se è stata applicata la forma).
+     * @returns {number} Livello medio arrotondato.
+     */
+    const calculateAverageLevel = (players) => {
+        if (!players || players.length === 0) return 0;
+        // Usa `currentLevel` se esiste (per la formazione), altrimenti `level`
+        const totalLevel = players.reduce((sum, player) => sum + (player.currentLevel || player.level || 1), 0);
+        return parseFloat((totalLevel / players.length).toFixed(1));
+    };
+    window.calculateAverageLevel = calculateAverageLevel; // Espongo la funzione
+
+    
+    /**
+     * Restituisce i 5 giocatori titolari attuali.
+     * @param {Object} teamData - L'oggetto dati della squadra.
+     * @returns {Array<Object>} Array con i 5 titolari (o un array vuoto).
+     */
+    const getFormationPlayers = (teamData) => {
+         if (!teamData || !teamData.formation || !teamData.formation.titolari) return [];
+         return teamData.formation.titolari.filter(p => p.level); // Assicura che abbiano un livello valido
+    };
+    window.getFormationPlayers = getFormationPlayers; // Espongo la funzione
+
+
+    /**
      * Helper per generare l'HTML del logo.
      */
     const getLogoHtml = (teamId) => {
@@ -109,7 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<img src="${url}" alt="Logo" class="w-6 h-6 rounded-full border border-gray-500 inline-block align-middle">`;
     };
     
-    // Rendo la funzione accessibile globalmente per campionato.js
+    // Rendo le funzioni accessibili globalmente per campionato.js
     window.getLogoHtml = getLogoHtml;
 
 
@@ -152,7 +201,19 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTeamId = teamDocId; // Salva l'ID corrente
         teamLogoElement.src = logoUrl || DEFAULT_LOGO_URL; // Aggiorna il logo
         
-        // NUOVO: Carica la prossima partita al caricamento della Dashboard
+        // NUOVO: Calcolo e aggiornamento statistiche
+        const allPlayers = currentTeamData.players || [];
+        const formationPlayers = getFormationPlayers(currentTeamData);
+        
+        const rosaLevel = calculateAverageLevel(allPlayers);
+        // Per il calcolo della formazione nella dashboard, applichiamo la forma base (senza modificatori)
+        const formationLevel = calculateAverageLevel(formationPlayers.map(p => ({ level: p.level })));
+        
+        statRosaLevel.textContent = rosaLevel.toFixed(1);
+        statRosaCount.textContent = `(${allPlayers.length} giocatori)`;
+        statFormazioneLevel.textContent = formationLevel.toFixed(1);
+        
+        // Carica la prossima partita al caricamento della Dashboard
         loadNextMatch();
     };
     
@@ -294,6 +355,11 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTeamId = null;
         currentTeamData = null; 
         if (teamLogoElement) teamLogoElement.src = DEFAULT_LOGO_URL;
+        
+        // Resetta le statistiche nella dashboard
+        if (statRosaLevel) statRosaLevel.textContent = 'N/A';
+        if (statFormazioneLevel) statFormazioneLevel.textContent = 'N/A';
+        if (statRosaCount) statRosaCount.textContent = `(${0} giocatori)`;
     };
     
     userLogoutButton.addEventListener('click', window.handleLogout);
@@ -637,7 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     players: INITIAL_SQUAD,
                     formation: {
                         modulo: '1-1-2-1',
-                        titolari: [],
+                        titolari: INITIAL_SQUAD, // Inizializza la formazione con la rosa base
                         panchina: []
                     }
                 };

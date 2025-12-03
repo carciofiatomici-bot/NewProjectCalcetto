@@ -74,6 +74,22 @@
             <h2 id="team-dashboard-title" class="text-4xl font-extrabold text-green-400 text-center mb-4">Area Tecnica (Dashboard)</h2>
             <p id="team-welcome-message" class="text-center text-lg text-gray-300">Caricamento dati squadra...</p>
             
+            <!-- NUOVO: RIEPILOGO STATISTICHE SQUADRA -->
+            <div class="grid grid-cols-2 gap-4 my-6">
+                <!-- Statistica 1: Livello Medio Rosa -->
+                <div class="p-4 bg-gray-800 rounded-lg border-2 border-green-500 text-center shadow-lg">
+                    <p class="text-sm text-gray-400 font-semibold">Livello Medio Rosa</p>
+                    <p id="stat-rosa-level" class="text-3xl font-extrabold text-green-400 mt-1">N/A</p>
+                    <p class="text-xs text-gray-500">(${0} giocatori)</p>
+                </div>
+                <!-- Statistica 2: Livello Medio Formazione -->
+                <div class="p-4 bg-gray-800 rounded-lg border-2 border-yellow-500 text-center shadow-lg">
+                    <p class="text-sm text-gray-400 font-semibold">Livello Tattico (5 Titolari)</p>
+                    <p id="stat-formazione-level" class="text-3xl font-extrabold text-yellow-400 mt-1">N/A</p>
+                    <p class="text-xs text-gray-500">Livello Base: 5</p>
+                </div>
+            </div>
+            
             <!-- NUOVO: PREVIEW PROSSIMA PARTITA -->
             <div id="next-match-preview" class="p-3 bg-gray-800 rounded-lg border-2 border-orange-500 text-center shadow-lg mb-4">
                 <p class="text-gray-400 font-semibold">Caricamento prossima sfida...</p>
@@ -294,7 +310,7 @@
 
     </script>
     
-    <!-- Collega gli script JavaScript esterni - DEVE ESSERE DOPO GLI SCRIPT FIREBASE -->
+    <!-- Collega gli script JavaScript esterni - DEVE ESSERE DOPO GLI SCRIP T FIREBASE -->
     <script src="interfaccia.js"></script>
     <script src="admin.js"></script> 
     <script src="draft.js"></script> 

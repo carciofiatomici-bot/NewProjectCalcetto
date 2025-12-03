@@ -1,0 +1,46 @@
+/*
+====================================================================
+CONTENUTO DEL MODULO STYLE.CSS
+====================================================================
+*/
+
+/* 1. Stile per l'immagine di sfondo globale */
+body {
+    font-family: 'Inter', sans-serif;
+    /* Immagine di Sfondo */
+    background-image: url('https://github.com/carciofiatomici-bot/immaginiserie/blob/main/sfondo%20app.jpg?raw=true');
+    background-size: cover;          
+    background-repeat: no-repeat;
+    background-attachment: fixed;    
+    background-position: center center;
+    min-height: 100vh;
+    margin: 0; 
+}
+
+/* 2. Stile per l'immagine che non è più fissa, ma scorre col contenuto */
+#footer-logo {
+    /* Rimosso position: fixed; */
+    margin: 40px auto; /* Aggiunge spazio sopra e sotto e lo centra */
+    display: block;    /* Assicura che sia un blocco per il margin: auto */
+    max-width: 256px;           
+    height: auto;
+    z-index: 10;                
+}
+
+/* 3. Nuovo Stile per i Box (Tema Calcistico/Gaming) */
+.football-box {
+    background-color: #1f2937; /* Grigio scuro (richiama l'ombra dello stadio) */
+    border: 2px solid #34d399; /* Bordo verde campo */
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 0 30px rgba(52, 211, 153, 0.4); /* Effetto glow verde */
+}
+
+/* Stili per messaggi di stato (per coerenza con il tema scuro) */
+.text-red-400 { color: #f87171; }
+.text-green-500 { color: #10b981; }
+
+/* Classe per nascondere i box (gestita da JavaScript, per evitare CLS) */
+.hidden-on-load {
+    display: none;
+}

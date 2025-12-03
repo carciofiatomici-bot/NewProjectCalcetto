@@ -44,7 +44,7 @@
                 Accedi
             </button>
             
-            <!-- BOTTONI PUBBLICI -->
+            <!-- BOTTONI PUBBLICI (RIMASTI QUI PER L'ACCESSO PRE-LOGIN) -->
             <div class="grid grid-cols-2 gap-2">
                 <button id="btn-leaderboard"
                         class="w-full bg-blue-500 text-white font-semibold py-2 rounded-lg shadow-md hover:bg-blue-400 transition duration-150 transform hover:scale-[1.02]">
@@ -61,11 +61,40 @@
 
         <!-- 3. CONTENUTO PRINCIPALE DELL'APP - Dashboard Squadra -->
         <div id="app-content" class="football-box w-full max-w-2xl transition duration-500 hidden-on-load">
+            
+            <!-- LOGO MODIFICABILE -->
+            <div id="team-logo-container" class="flex justify-center mb-6">
+                <img id="team-logo" 
+                     src="https://github.com/carciofiatomici-bot/immaginiserie/blob/main/placeholder.jpg?raw=true" 
+                     alt="Logo Squadra Modificabile" 
+                     class="w-24 h-24 rounded-full border-4 border-green-500 cursor-pointer hover:border-yellow-400 transition duration-150 shadow-lg"
+                     title="Clicca per cambiare il logo (Inserisci URL)">
+            </div>
+            
             <h2 id="team-dashboard-title" class="text-4xl font-extrabold text-green-400 text-center mb-4">Area Tecnica (Dashboard)</h2>
             <p id="team-welcome-message" class="text-center text-lg text-gray-300">Caricamento dati squadra...</p>
             
-            <!-- Pulsanti di Navigazione Squadra -->
-            <div class="mt-8 grid grid-cols-3 gap-4">
+            <!-- NUOVO: PREVIEW PROSSIMA PARTITA -->
+            <div id="next-match-preview" class="p-3 bg-gray-800 rounded-lg border-2 border-orange-500 text-center shadow-lg mb-4">
+                <p class="text-gray-400 font-semibold">Caricamento prossima sfida...</p>
+            </div>
+
+
+            <!-- PULSANTI PUBBLICI (Accesso Diretto) -->
+            <div class="mt-8 grid grid-cols-2 gap-4">
+                 <button id="btn-dashboard-leaderboard"
+                        class="w-full bg-blue-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-blue-400 transition duration-150 transform hover:scale-[1.01]">
+                    Classifica (Lega)
+                </button>
+                <button id="btn-dashboard-schedule"
+                        class="w-full bg-teal-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-teal-400 transition duration-150 transform hover:scale-[1.01]">
+                    Calendario (Lega)
+                </button>
+            </div>
+
+
+            <!-- Pulsanti di Navigazione Squadra (Gestione interna) -->
+            <div class="mt-4 grid grid-cols-3 gap-4">
                 <button id="btn-gestione-rosa"
                         class="bg-green-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-green-500 transition duration-150 transform hover:scale-[1.01]">
                     Gestione Rosa
@@ -185,6 +214,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // *** IMPORTAZIONE CRITICA: AGGIUNTO updateDoc ***
         import { getFirestore, doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; 
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -212,8 +242,8 @@
         window.app = initializeApp(window.firebaseConfig);
         window.db = getFirestore(window.app);
         window.auth = getAuth(window.app);
-        // Metodi utili resi globali per accesso da tutti i moduli
-        window.firestoreTools = { doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc, appId }; // AGGIUNTO addDoc nella lista
+        // *** ESPOSIZIONE CRITICA: AGGIUNTO updateDoc alla lista ***
+        window.firestoreTools = { doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc, appId }; 
         
         // Funzione globale per cambiare schermata
         window.showScreen = (elementToShow) => {

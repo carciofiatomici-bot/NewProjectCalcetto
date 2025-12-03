@@ -9,6 +9,8 @@ let auth;
 let db;
 let firestoreTools;
 let currentTeamId = null; // Memorizza l'ID della squadra corrente
+let currentTeamData = null; // VARIABILE GLOBALE PER I DATI COMPLETI DELLA SQUADRA
+let teamLogosMap = {}; // Mappa per salvare {teamId: logoUrl} di tutte le squadre
 
 document.addEventListener('DOMContentLoaded', () => {
     // Verifica che gli oggetti globali Firebase siano disponibili
@@ -23,8 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     auth = window.auth;
     db = window.db;
     firestoreTools = window.firestoreTools;
-    const { doc, getDoc, setDoc, appId } = firestoreTools;
-
+    const { doc, getDoc, setDoc, updateDoc, collection, getDocs, appId } = firestoreTools;
+    
     // Riferimenti ai contenitori
     const gateBox = document.getElementById('gate-box');
     const loginBox = document.getElementById('login-box');
@@ -39,24 +41,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const teamWelcomeMessage = document.getElementById('team-welcome-message');
     const teamFirestoreId = document.getElementById('team-firestore-id');
     const userLogoutButton = document.getElementById('user-logout-button');
+    const teamLogoElement = document.getElementById('team-logo');
+    const nextMatchPreview = document.getElementById('next-match-preview');
     
     // Riferimenti ai pulsanti di navigazione squadra
     const btnGestioneRosa = document.getElementById('btn-gestione-rosa');
     const btnGestioneFormazione = document.getElementById('btn-gestione-formazione');
     const btnDraftUtente = document.getElementById('btn-draft-utente');
+    const btnDashboardLeaderboard = document.getElementById('btn-dashboard-leaderboard');
+    const btnDashboardSchedule = document.getElementById('btn-dashboard-schedule');
+
 
     // Riferimenti ai pulsanti pubblici
     const btnLeaderboard = document.getElementById('btn-leaderboard');
     const btnSchedule = document.getElementById('btn-schedule');
     const leaderboardBackButton = document.getElementById('leaderboard-back-button');
     const scheduleBackButton = document.getElementById('schedule-back-button');
+    
+    // Contenitori interni
+    const scheduleDisplayContainer = scheduleContent ? scheduleContent.querySelector('.football-box > div:not([id])') : null;
+    const leaderboardDisplayContainer = leaderboardContent ? leaderboardContent.querySelector('.football-box > div:not([id])') : null;
 
-
-    // Elementi del Gate Box
-    const gatePasswordInput = document.getElementById('gate-password');
-    const gateButton = document.getElementById('gate-button');
-    const gateMessage = document.getElementById('gate-message');
-    const MASTER_PASSWORD = "seria"; // Password d'accesso richiesta
 
     // Elementi del Login Box
     const loginUsernameInput = document.getElementById('login-username');
@@ -64,15 +69,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginButton = document.getElementById('login-button');
     const loginMessage = document.getElementById('login-message');
     
-    // Credenziali Admin Hardcoded (solo per mockup prima di usare Firebase Auth)
+    // Elementi del Gate Box
+    const gatePasswordInput = document.getElementById('gate-password');
+    const gateButton = document.getElementById('gate-button');
+    const gateMessage = document.getElementById('gate-message');
+    const MASTER_PASSWORD = "seria"; // <-- DEFINIZIONE UNICA QUI (Scope corretto)
+
+    
+    // Credenziali Admin Hardcoded
     const ADMIN_USERNAME = "serieseria";
     const ADMIN_PASSWORD = "admin";
-    const ADMIN_USERNAME_LOWER = ADMIN_USERNAME.toLowerCase(); // Costante per il controllo
+    const ADMIN_USERNAME_LOWER = ADMIN_USERNAME.toLowerCase();
     
     // Costante per la collezione pubblica delle squadre
     const TEAMS_COLLECTION_PATH = `artifacts/${appId}/public/data/teams`;
+    const SCHEDULE_COLLECTION_PATH = `artifacts/${appId}/public/data/schedule`;
+    const LEADERBOARD_COLLECTION_PATH = `artifacts/${appId}/public/data/leaderboard`; 
+    const SCHEDULE_DOC_ID = 'full_schedule';
+    const LEADERBOARD_DOC_ID = 'standings'; 
+    
+    // Costante Logo Placeholder
+    const DEFAULT_LOGO_URL = "https://github.com/carciofiatomici-bot/immaginiserie/blob/main/placeholder.jpg?raw=true";
 
-    // --- ROSA INIZIALE CORRETTA (Aggiunto 'level: 1' a tutti) ---
+
+    // --- ROSA INIZIALE ---
     const INITIAL_SQUAD = [
         { id: 'p001', name: 'Portiere', role: 'P', levelRange: [1, 1], age: 50, cost: 0, level: 1 },
         { id: 'd001', name: 'Difensore', role: 'D', levelRange: [1, 1], age: 50, cost: 0, level: 1 },
@@ -81,87 +101,425 @@ document.addEventListener('DOMContentLoaded', () => {
         { id: 'a001', name: 'Attaccante', role: 'A', levelRange: [1, 1], age: 50, cost: 0, level: 1 }
     ];
 
+    /**
+     * Helper per generare l'HTML del logo.
+     */
+    const getLogoHtml = (teamId) => {
+        const url = teamLogosMap[teamId] || DEFAULT_LOGO_URL;
+        return `<img src="${url}" alt="Logo" class="w-6 h-6 rounded-full border border-gray-500 inline-block align-middle">`;
+    };
+    
+    // Rendo la funzione accessibile globalmente per campionato.js
+    window.getLogoHtml = getLogoHtml;
+
+
+    /**
+     * Carica tutti i loghi delle squadre e li mappa {id: url}
+     */
+    const fetchAllTeamLogos = async () => {
+        try {
+            const teamsCollectionRef = collection(db, TEAMS_COLLECTION_PATH);
+            const teamsSnapshot = await getDocs(teamsCollectionRef);
+            
+            const logos = {};
+            teamsSnapshot.forEach(doc => {
+                const data = doc.data();
+                logos[doc.id] = data.logoUrl || DEFAULT_LOGO_URL;
+            });
+            
+            teamLogosMap = logos;
+            console.log("Mappa loghi caricata con successo.");
+
+        } catch (error) {
+            console.error("Errore nel caricamento dei loghi:", error);
+            teamLogosMap = {}; // Fallback a mappa vuota
+        }
+    };
+    
+    // Rendo la funzione accessibile globalmente per campionato.js
+    window.fetchAllTeamLogos = fetchAllTeamLogos;
+
     
     /**
      * Aggiorna l'interfaccia utente con i dati della squadra.
-     * @param {string} teamName - Il nome della squadra.
-     * @param {string} teamDocId - L'ID del documento Firestore.
-     * @param {boolean} isNew - Indica se la squadra è appena stata creata.
      */
-    const updateTeamUI = (teamName, teamDocId, isNew) => {
+    const updateTeamUI = (teamName, teamDocId, logoUrl, isNew) => {
         teamDashboardTitle.textContent = `Dashboard di ${teamName}`;
         teamWelcomeMessage.textContent = isNew 
             ? `Benvenuto/a, Manager! La tua squadra '${teamName}' è stata appena creata. Inizia il calciomercato!`
             : `Bentornato/a, Manager di ${teamName}! Sei pronto per la prossima giornata?`;
         teamFirestoreId.textContent = teamDocId;
         currentTeamId = teamDocId; // Salva l'ID corrente
+        teamLogoElement.src = logoUrl || DEFAULT_LOGO_URL; // Aggiorna il logo
+        
+        // NUOVO: Carica la prossima partita al caricamento della Dashboard
+        loadNextMatch();
     };
+    
+    /**
+     * Gestisce il click sul logo per richiedere un nuovo URL.
+     */
+    const handleLogoClick = async () => {
+        if (!currentTeamId) return;
+
+        const newLogoUrl = prompt("Inserisci il link (URL) del nuovo logo della squadra:", teamLogoElement.src);
+        
+        if (newLogoUrl === null) {
+            return;
+        }
+
+        const trimmedUrl = newLogoUrl.trim();
+        
+        if (trimmedUrl === "" || !trimmedUrl.startsWith('http')) {
+             const finalUrl = trimmedUrl.startsWith('http') ? trimmedUrl : DEFAULT_LOGO_URL;
+             if (trimmedUrl !== "" && !trimmedUrl.startsWith('http')) {
+                 alert("Per favore, inserisci un URL valido (deve iniziare con http/https). Verrà utilizzato il placeholder.");
+             }
+             teamLogoElement.src = finalUrl;
+             currentTeamData.logoUrl = finalUrl;
+             await saveLogoUrl(finalUrl);
+             return;
+        }
+        
+        teamLogoElement.src = trimmedUrl;
+        currentTeamData.logoUrl = trimmedUrl;
+        
+        await saveLogoUrl(trimmedUrl);
+    };
+
+    /**
+     * Salva l'URL del logo su Firestore.
+     */
+    const saveLogoUrl = async (url) => {
+        try {
+            const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, currentTeamId);
+            await updateDoc(teamDocRef, {
+                logoUrl: url
+            });
+            teamLogosMap[currentTeamId] = url;
+            console.log("Logo aggiornato su Firestore con successo.");
+        } catch (error) {
+            console.error("Errore nel salvataggio del logo:", error);
+            alert("Errore nel salvataggio del logo su Firestore. Controlla la console.");
+        }
+    };
+    
+    /**
+     * Carica e visualizza la prossima partita da giocare per la squadra corrente.
+     */
+    const loadNextMatch = async () => {
+        if (!currentTeamId || !currentTeamData || !nextMatchPreview) return;
+        
+        nextMatchPreview.innerHTML = `<p class="text-gray-400 font-semibold">Ricerca prossima sfida...</p>`;
+
+        try {
+            const { doc, getDoc } = firestoreTools;
+            const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+            const scheduleDoc = await getDoc(scheduleDocRef);
+            
+            if (!scheduleDoc.exists() || !scheduleDoc.data().matches) {
+                nextMatchPreview.innerHTML = `<p class="text-red-400 font-semibold">Calendario non generato dall'Admin.</p>`;
+                return;
+            }
+            
+            const allRounds = scheduleDoc.data().matches;
+            let nextMatch = null;
+
+            for (const round of allRounds) {
+                if (!round.matches) continue; 
+
+                const match = round.matches.find(m => 
+                    m.result === null && (m.homeId === currentTeamId || m.awayId === currentTeamId)
+                );
+                if (match) {
+                    nextMatch = match;
+                    break;
+                }
+            }
+
+            if (nextMatch) {
+                const opponentId = nextMatch.homeId === currentTeamId ? nextMatch.awayId : nextMatch.homeId;
+                const opponentName = nextMatch.homeId === currentTeamId ? nextMatch.awayName : nextMatch.homeName;
+                const isHome = nextMatch.homeId === currentTeamId;
+                const statusColor = isHome ? 'text-green-300' : 'text-red-300';
+                const statusText = isHome ? 'IN CASA' : 'FUORI CASA';
+                
+                // --- LOGICA LOGHI ---
+                const homeLogo = getLogoHtml(nextMatch.homeId);
+                const awayLogo = getLogoHtml(nextMatch.awayId);
+                // --- FINE LOGICA LOGHI ---
+                
+                nextMatchPreview.innerHTML = `
+                    <p class="text-sm text-gray-300 font-semibold mb-1">PROSSIMA SFIDA (Giornata ${nextMatch.round} / ${nextMatch.type})</p>
+                    <div class="flex justify-center items-center space-x-4">
+                        
+                        <!-- SQUADRA CASA: Logo a Sinistra del Nome -->
+                        <span class="text-xl font-extrabold text-white flex items-center">
+                            ${homeLogo} <span class="ml-2">${nextMatch.homeName}</span>
+                        </span>
+                        
+                        <span class="text-2xl font-extrabold text-orange-400">VS</span>
+                        
+                        <!-- SQUADRA OSPITE: Logo a Destra del Nome -->
+                        <span class="text-xl font-extrabold text-white flex items-center">
+                            <span class="mr-2">${nextMatch.awayName}</span> ${awayLogo}
+                        </span>
+
+                    </div>
+                    <p class="text-sm font-semibold mt-1 ${statusColor}">Giochi ${statusText}</p>
+                `;
+            } else {
+                nextMatchPreview.innerHTML = `<p class="text-green-400 font-semibold">Hai giocato tutte le partite! Campionato concluso.</p>`;
+            }
+
+        } catch (error) {
+            console.error("Errore nel caricamento prossima partita:", error);
+            nextMatchPreview.innerHTML = `<p class="text-red-400 font-semibold">Errore nel caricamento sfida. Controlla la console.</p>`;
+        }
+    };
+    
+
+    // Collega l'evento click al logo
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'team-logo') {
+            handleLogoClick();
+        }
+    });
 
     // Funzione helper per il logout (definita in interfaccia.js per renderla globale)
     window.handleLogout = () => {
-        // Logica di disconnessione (non disconnettiamo l'utente Firebase anonimo)
         console.log("Logout Utente effettuato. Torno alla schermata di login.");
-        loginPasswordInput.value = ''; // Pulisci la password
-        window.showScreen(loginBox); // Usa la funzione globale
+        loginPasswordInput.value = '';
+        window.showScreen(loginBox);
         currentTeamId = null;
+        currentTeamData = null; 
+        if (teamLogoElement) teamLogoElement.src = DEFAULT_LOGO_URL;
     };
     
     userLogoutButton.addEventListener('click', window.handleLogout);
 
 
     // -------------------------------------------------------------------
-    // LOGICA DI NAVIGAZIONE SQUADRA
+    // LOGICA DI NAVIGAZIONE SQUADRA (Gestione interna)
     // -------------------------------------------------------------------
-
-    // Gestione Rosa / Formazione
     btnGestioneRosa.addEventListener('click', () => {
         window.showScreen(squadraContent);
-        // Lancia l'evento per inizializzare Gestione Rosa
         document.dispatchEvent(new CustomEvent('squadraPanelLoaded', { detail: { mode: 'rosa', teamId: currentTeamId } }));
     });
-    
-    // Gestione Formazione (Riutilizzo la stessa schermata con mode: 'formazione')
     btnGestioneFormazione.addEventListener('click', () => {
         window.showScreen(squadraContent);
-        // Lancia l'evento per inizializzare Gestione Formazione
         document.dispatchEvent(new CustomEvent('squadraPanelLoaded', { detail: { mode: 'formazione', teamId: currentTeamId } }));
     });
-    
-    // Draft Utente (Marketplace)
     btnDraftUtente.addEventListener('click', () => {
-        // Riutilizzo il contenitore draft-content (che è un max-w-4xl) per il marketplace utente
         const draftAdminContent = document.getElementById('draft-content');
         if (draftAdminContent) {
             window.showScreen(draftAdminContent);
-            // Lancia l'evento per la modalità Draft Utente
             document.dispatchEvent(new CustomEvent('draftPanelLoaded', { detail: { mode: 'utente', teamId: currentTeamId } }));
         }
     });
+    
+    // CABLAGGI PER LA DASHBOARD UTENTE
+    if (btnDashboardLeaderboard) {
+        btnDashboardLeaderboard.addEventListener('click', () => {
+            window.showScreen(leaderboardContent);
+            loadLeaderboard(); 
+        });
+    }
+    if (btnDashboardSchedule) {
+        btnDashboardSchedule.addEventListener('click', () => {
+            window.showScreen(scheduleContent);
+            loadSchedule(); 
+        });
+    }
 
 
     // -------------------------------------------------------------------
-    // LOGICA DI NAVIGAZIONE PUBBLICA
+    // LOGICA DI NAVIGAZIONE PUBBLICA (Classifica e Calendario)
     // -------------------------------------------------------------------
     
-    // Classifica
+    // Classifica (Login Page)
     btnLeaderboard.addEventListener('click', () => {
         window.showScreen(leaderboardContent);
-        document.dispatchEvent(new CustomEvent('leaderboardLoaded')); 
+        loadLeaderboard();
     });
     
-    // Calendario
+    // Calendario (Login Page)
     btnSchedule.addEventListener('click', () => {
         window.showScreen(scheduleContent);
-        document.dispatchEvent(new CustomEvent('scheduleLoaded')); 
+        loadSchedule(); 
     });
     
-    // Ritorno dal Pubblico al Login
+    // Ritorno dal Pubblico
     leaderboardBackButton.addEventListener('click', () => {
-        window.showScreen(loginBox);
+        window.showScreen(currentTeamId ? appContent : loginBox);
     });
     scheduleBackButton.addEventListener('click', () => {
-        window.showScreen(loginBox);
+        window.showScreen(currentTeamId ? appContent : loginBox);
     });
+    
+    /**
+     * Carica e visualizza il calendario completo delle partite.
+     */
+    const loadSchedule = async () => {
+        const { doc, getDoc } = firestoreTools;
+        const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+
+        scheduleDisplayContainer.innerHTML = `
+            <p class="text-white font-semibold">Caricamento Calendario...</p>
+            <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-teal-500 text-center shadow-lg">
+                 <p class="text-gray-400">Recupero dati da Firestore.</p>
+            </div>
+        `;
+
+        try {
+            await fetchAllTeamLogos(); 
+            
+            const scheduleDoc = await getDoc(scheduleDocRef);
+            
+            if (!scheduleDoc.exists() || !scheduleDoc.data().matches || scheduleDoc.data().matches.length === 0) {
+                scheduleDisplayContainer.innerHTML = `
+                    <p class="text-white font-semibold text-center mb-4">Nessun Calendario Disponibile.</p>
+                    <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 text-center shadow-lg">
+                        <p class="text-red-400 font-semibold">Il calendario deve essere generato dall'Admin nell'area Impostazioni Campionato.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const scheduleData = scheduleDoc.data().matches;
+            const totalRounds = scheduleData.length > 0 ? scheduleData[scheduleData.length - 1].round : 0;
+
+            let scheduleHtml = `<p class="text-white font-semibold text-xl mb-4">Calendario Completo: ${totalRounds} Giornate</p>`;
+
+            scheduleData.forEach(roundData => {
+                const roundNum = roundData.round;
+                const roundType = roundData.matches[0].type;
+                const roundBg = roundType === 'Ritorno' ? 'bg-teal-700' : 'bg-gray-700';
+
+                scheduleHtml += `
+                    <div class="mb-6 p-4 rounded-lg ${roundBg} border border-teal-500 shadow-md">
+                        <h4 class="font-bold text-lg text-yellow-300 border-b border-gray-600 pb-1">
+                            GIORNATA ${roundNum} (${roundType})
+                        </h4>
+                        <ul class="mt-2 space-y-1 text-white">
+                            ${roundData.matches.map(match => `
+                                <li class="text-sm p-1 rounded hover:bg-gray-600 transition flex items-center justify-between">
+                                    
+                                    <!-- SQUADRA CASA: Logo a Sinistra -->
+                                    <span class="flex items-center">
+                                        ${getLogoHtml(match.homeId)} <span class="ml-2">${match.homeName}</span>
+                                    </span> 
+                                    
+                                    ${match.result ? `<span class="font-bold text-red-300">${match.result}</span>` : '<span class="text-gray-400">vs</span>'} 
+                                    
+                                    <!-- SQUADRA OSPITE: Logo a Destra -->
+                                    <span class="flex items-center text-right">
+                                        <span class="mr-2">${match.awayName}</span> ${getLogoHtml(match.awayId)}
+                                    </span>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+            });
+
+
+            scheduleDisplayContainer.innerHTML = scheduleHtml;
+
+        } catch (error) {
+            console.error("Errore nel caricamento del calendario:", error);
+            scheduleDisplayContainer.innerHTML = `
+                <p class="text-white font-semibold text-center mb-4">Errore di Connessione</p>
+                <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 text-center shadow-lg">
+                    <p class="text-red-400">Impossibile caricare il calendario. Controlla la tua connessione.</p>
+                </div>
+            `;
+        }
+    };
+    
+    /**
+     * Carica e visualizza la classifica completa.
+     */
+    const loadLeaderboard = async () => {
+        const { doc, getDoc } = firestoreTools;
+        const leaderboardDocRef = doc(db, LEADERBOARD_COLLECTION_PATH, LEADERBOARD_DOC_ID);
+
+        leaderboardDisplayContainer.innerHTML = `
+            <p class="text-white font-semibold text-center">Caricamento Classifica...</p>
+            <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-blue-500 text-center shadow-lg">
+                 <p class="text-gray-400">Recupero dati da Firestore.</p>
+            </div>
+        `;
+
+        try {
+            await fetchAllTeamLogos(); 
+
+            const leaderboardDoc = await getDoc(leaderboardDocRef);
+            
+            if (!leaderboardDoc.exists() || !leaderboardDoc.data().standings || leaderboardDoc.data().standings.length === 0) {
+                leaderboardDisplayContainer.innerHTML = `
+                    <p class="text-white font-semibold text-center mb-4">Classifica non disponibile.</p>
+                    <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 text-center shadow-lg">
+                        <p class="text-red-400 font-semibold">Simula la prima giornata per generare la classifica.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const standings = leaderboardDoc.data().standings;
+            let leaderboardHtml = `
+                <h3 class="text-2xl font-extrabold text-blue-400 mb-4 text-center">Classifica Generale</h3>
+                <div class="bg-gray-800 rounded-lg overflow-x-auto shadow-xl">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-blue-600 text-white">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider">#</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider">Squadra</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">Pti</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">G</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">V</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">N</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">P</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">GF</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">GS</th>
+                                <th class="px-3 py-2 text-center text-xs font-medium uppercase tracking-wider">DG</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700 text-white">
+                            ${standings.map((team, index) => `
+                                <tr class="${index % 2 === 0 ? 'bg-gray-700' : 'bg-gray-600'} hover:bg-gray-500 transition duration-150">
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm font-medium">${index + 1}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm font-semibold flex items-center">
+                                        ${getLogoHtml(team.teamId)} <span class="ml-2">${team.teamName}</span>
+                                    </td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center font-extrabold text-yellow-300">${team.points}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center">${team.played}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center text-green-400">${team.wins}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center text-gray-300">${team.draws}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center text-red-400">${team.losses}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center">${team.goalsFor}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center">${team.goalsAgainst}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm text-center font-bold">${team.goalsFor - team.goalsAgainst}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            leaderboardDisplayContainer.innerHTML = leaderboardHtml;
+
+        } catch (error) {
+            console.error("Errore nel caricamento della classifica:", error);
+            leaderboardDisplayContainer.innerHTML = `
+                <p class="text-white font-semibold text-center mb-4">Errore di Connessione</p>
+                <div class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 text-center shadow-lg">
+                    <p class="text-red-400">Impossibile caricare la classifica. Controlla la tua connessione.</p>
+                </div>
+            `;
+        }
+    };
+
 
     // -------------------------------------------------------------------
     // LOGICA GATE (Password Iniziale)
@@ -169,15 +527,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleGateAccess = () => {
         const password = gatePasswordInput.value.trim();
+        // REMOVED: const MASTER_PASSWORD = "seria"; // Errore di scope
+        
         gateMessage.textContent = "";
 
-        if (password === MASTER_PASSWORD) {
+        if (password === MASTER_PASSWORD) { // USES MASTER_PASSWORD DEFINED AT LINE 71
             gateMessage.textContent = "Accesso Gate Confermato. Prosegui al Login...";
             gateMessage.classList.remove('text-red-400');
             gateMessage.classList.add('text-green-500');
 
             setTimeout(() => {
-                window.showScreen(loginBox); // Usa la funzione globale
+                window.showScreen(loginBox);
                 loginUsernameInput.focus();
             }, 1000);
 
@@ -189,11 +549,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    gateButton.addEventListener('click', handleGateAccess);
-    gatePasswordInput.addEventListener('keypress', (e) => {
+    // Cablaggi per il Gate Box
+    if (gateButton) gateButton.addEventListener('click', handleGateAccess);
+    if (gatePasswordInput) gatePasswordInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') handleGateAccess();
     });
-
+    
     // -------------------------------------------------------------------
     // LOGICA LOGIN (Nome Squadra / Password) - Gestisce Admin o Utente
     // -------------------------------------------------------------------
@@ -222,25 +583,21 @@ document.addEventListener('DOMContentLoaded', () => {
              loginMessage.textContent = "Errore: Il Nome Squadra non può contenere spazi bianchi. Riprova.";
              loginMessage.classList.remove('text-green-500');
              loginMessage.classList.add('text-red-400');
-             loginPasswordInput.value = '';
              return;
         }
         
         // --- BLOCCO NOME RISERVATO (ADMIN) ---
         if (teamDocId === ADMIN_USERNAME_LOWER) {
-            // Se è l'admin, procedi con l'autenticazione admin
             if (password !== ADMIN_PASSWORD) {
                 loginMessage.textContent = "Password Amministratore non valida.";
                 loginMessage.classList.remove('text-green-500');
                 loginMessage.classList.add('text-red-400');
-                loginPasswordInput.value = '';
                 return;
             }
             
-            // Se è l'admin e la password è corretta, va alla dashboard admin
             loginMessage.textContent = "Accesso Amministratore Riuscito!";
             setTimeout(() => {
-                window.showScreen(adminContent); // Usa la funzione globale
+                window.showScreen(adminContent);
                 document.dispatchEvent(new CustomEvent('adminLoggedIn')); 
             }, 1000);
             return;
@@ -254,10 +611,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             let isNewTeam = false;
             let teamData = {};
-            const teamNameForDisplay = inputTeamName; // Usa il nome originale per la UI
+            const teamNameForDisplay = inputTeamName;
 
             if (teamDoc.exists()) {
-                // SQUADRA ESISTENTE: Verifica la password (mockup)
                 teamData = teamDoc.data();
                 
                 if (teamData.password !== password) {
@@ -269,17 +625,18 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // NUOVA SQUADRA: Crea il documento
                 isNewTeam = true;
-                const initialBudget = 500; // Crediti Iniziali
+                const initialBudget = 500;
                 
                 teamData = {
-                    teamName: teamNameForDisplay, // Salva il nome originale (con maiuscole) per la visualizzazione
+                    teamName: teamNameForDisplay,
                     ownerUserId: userId,
-                    password: password, // MOCKUP
+                    password: password, 
                     budget: initialBudget,
                     creationDate: new Date().toISOString(),
-                    players: INITIAL_SQUAD, // INSERISCI LA ROSA INIZIALE CORRETTA
+                    logoUrl: DEFAULT_LOGO_URL, // Logo di default
+                    players: INITIAL_SQUAD,
                     formation: {
-                        modulo: '1-1-2-1', // Modulo predefinito
+                        modulo: '1-1-2-1',
                         titolari: [],
                         panchina: []
                     }
@@ -290,10 +647,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginMessage.textContent = `Congratulazioni! Squadra '${teamNameForDisplay}' creata con ${initialBudget} Crediti Seri e 5 giocatori base!`;
             }
 
+            // Imposta la variabile globale con i dati caricati/creati
+            currentTeamData = teamData;
+            
+            // Pre-carica tutti i loghi prima di mostrare la dashboard
+            await fetchAllTeamLogos();
+
             // Mostra la dashboard utente
             setTimeout(() => {
-                updateTeamUI(teamNameForDisplay, teamDocRef.id, isNewTeam);
-                window.showScreen(appContent); // Usa la funzione globale
+                updateTeamUI(teamNameForDisplay, teamDocRef.id, teamData.logoUrl, isNewTeam);
+                window.showScreen(appContent);
                 loginPasswordInput.value = '';
             }, 1000);
             
@@ -302,7 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
             loginMessage.textContent = `Errore: ${error.message}`;
             loginMessage.classList.remove('text-green-500');
             loginMessage.classList.add('text-red-400');
-            loginPasswordInput.value = ''; 
         }
     };
 

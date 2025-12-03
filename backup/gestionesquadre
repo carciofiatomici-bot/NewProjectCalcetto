@@ -19,8 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentTeamId = null;
     let currentTeamData = null; // Dati della squadra caricati
     
-    // VARIABILI GLOBALI PER IL DRAG (Solo per il feedback visivo)
-    let currentDragTarget = null; 
+    // VARIABILE GLOBALE PER IL GIOCATORE IN DRAG (Fix Essenziale)
+    let currentDraggedPlayerId = null;
 
     // Costanti per le collezioni
     let TEAMS_COLLECTION_PATH;
@@ -36,6 +36,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Ruoli totali
     const ROLES = ['P', 'D', 'C', 'A'];
+    
+    // Posizioni assolute fittizie per i ruoli sul campo da gioco (percentuale altezza)
+    const FIELD_POSITIONS = {
+        P: [10], // Portiere in basso (10% dall'alto)
+        D: [30, 30, 30], // Difesa (30% dall'alto)
+        C: [55, 55, 55], // Centrocampo (55% dall'alto)
+        A: [80, 80, 80]  // Attacco (80% dall'alto)
+    };
+
 
     /**
      * Helper per mostrare messaggi di stato.
@@ -57,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Funzione principale per inizializzare il pannello squadra in modalità Rosa o Formazione.
+     * @param {CustomEvent} event - L'evento custom con i dettagli della modalità e del teamId.
      */
     const initializeSquadraPanel = (event) => {
         if (!event.detail || !event.detail.teamId) {
@@ -80,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     /**
      * Carica i dati della squadra da Firestore e li renderizza.
+     * @param {string} mode - 'rosa' o 'formazione'.
      */
     const loadTeamDataAndRender = async (mode) => {
         const { doc, getDoc } = firestoreTools;
@@ -109,6 +120,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // MODALITÀ GESTIONE ROSA
     // -------------------------------------------------------------------
     
+    /**
+     * Renderizza l'interfaccia per la Gestione Rosa.
+     * @param {object} teamData - I dati della squadra.
+     */
     const renderRosaManagement = (teamData) => {
         squadraMainTitle.textContent = "Gestione Rosa";
         squadraSubtitle.textContent = `Budget Rimanente: ${teamData.budget} Crediti Seri | Giocatori in rosa: ${teamData.players.length}`;
@@ -151,6 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     
+    /**
+     * Gestisce l'azione di licenziamento di un giocatore (rimozione dalla rosa).
+     * @param {Event} event 
+     */
     const handleRosaAction = async (event) => {
         const target = event.target;
         const msgContainerId = 'player-list-message';
@@ -196,6 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 
                 displayMessage(msgContainerId, `Giocatore ${playerName} licenziato! Rimborsati ${refundCost} Crediti Seri.`, 'success');
+                
                 loadTeamDataAndRender('rosa');
 
             } catch (error) {
@@ -215,22 +235,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // MODALITÀ GESTIONE FORMAZIONE (Drag & Drop Implementato)
     // -------------------------------------------------------------------
     
+    /**
+     * Genera la struttura HTML per uno slot (drop target).
+     * @param {string} role - Ruolo dello slot (P, D, C, A).
+     * @param {number} index - Indice dello slot.
+     * @param {object} player - Giocatore attualmente nello slot.
+     */
     const createPlayerSlot = (role, index, player) => {
         const slotId = `${role}-${index}`;
         const playerName = player ? `${player.name}` : `Slot ${role}`;
-        const playerRole = player ? player.role : role; 
-        const levelText = player ? player.level : ''; 
-        const bgColor = player ? 'bg-yellow-500' : 'bg-gray-700'; 
+        const playerRole = player ? player.role : role; // Ruolo reale del giocatore o ruolo dello slot
+        const levelText = player ? player.level : ''; // Livello numerico
+        const bgColor = player ? 'bg-yellow-500' : 'bg-gray-700'; // Colore della maglia (Giallo/Grigio)
         const textColor = player ? 'text-gray-900' : 'text-gray-400';
-        
-        // AGGIUNTO ondragend qui
-        const draggableAttr = player ? `draggable="true" data-id="${player.id}" data-role="${player.role}" data-cost="${player.cost}" ondragend="window.handleDragEnd(event)"` : '';
+        // ASSICURIAMO CHE TUTTI GLI ATTRIBUTI siano sul div principale .slot-target
+        const draggableAttr = player ? `draggable="true" data-id="${player.id}" data-role="${player.role}" data-cost="${player.cost}"` : '';
         
         let warningHtml = '';
         let tooltipText = '';
 
+        // LOGICA AVVISO: Se c'è un giocatore e il ruolo dello slot (role) è diverso dal ruolo naturale del giocatore (player.role)
         if (player && role !== 'B' && player.role !== role) {
             tooltipText = `ATTENZIONE: ${player.name} è un ${player.role} ma gioca come ${role}. L'impatto in partita sarà minore.`;
+            // Icona SVG (punto esclamativo rosso)
             warningHtml = `
                 <span class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 cursor-help" 
                       title="${tooltipText}">
@@ -241,13 +268,18 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         }
 
+        // --- STRUTTURA ESTETICA CONCISA ---
         const playerContent = player ? 
+            // Maglietta con Ruolo (Lettera) e Livello (Numero)
             `<div class="jersey-inner w-full h-full flex flex-col justify-center items-center font-extrabold select-none">
                 <span class="text-lg">${playerRole}</span>
                 <span class="text-3xl">${levelText}</span>
             </div>`
             : 
+            // Slot vuoto: mostra solo la lettera del ruolo per esteso (P, D, C, A, B)
             `<span class="font-semibold text-xs select-none">${role}</span>`;
+        // --- FINE NUOVA STRUTTURA ---
+
 
         return `
             <div data-role="${role}" id="${slotId}" class="slot-target w-full p-1 text-center rounded-lg shadow-inner-dark transition duration-150 cursor-pointer relative
@@ -256,15 +288,18 @@ document.addEventListener('DOMContentLoaded', () => {
                  ondragover="event.preventDefault();"
                  ondrop="window.handleDrop(event, '${role}')"
                  ${draggableAttr}
-                 ondragstart="window.handleDragStart(event)"
                  title="${player ? playerName : ''}">
                 
                 ${playerContent}
-                ${warningHtml}
+                ${warningHtml} <!-- INSERISCI L'ICONA DI AVVISO -->
             </div>
         `;
     };
 
+    /**
+     * Renderizza gli slot del campo in base al modulo selezionato e riempie la lista disponibili/panchina.
+     * @param {object} teamData - I dati della squadra.
+     */
     const renderFieldSlots = (teamData) => {
         const formationData = teamData.formation;
         const currentModule = MODULI[formationData.modulo];
@@ -274,27 +309,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!titolariSlots || !panchinaSlots || !fullSquadList || !currentModule) return;
         
+        // 1. Prepara i dati
         const allPlayers = teamData.players;
         const titolariIds = formationData.titolari.map(p => p.id);
         const panchinaIds = formationData.panchina.map(p => p.id);
         
+        // La rosa disponibile è costituita da TUTTI i giocatori meno i Titolari e quelli in Panchina
         const availablePlayers = allPlayers.filter(p => !titolariIds.includes(p.id) && !panchinaIds.includes(p.id));
         
+        // Raggruppa i titolari per ruolo (crea una COPIA dell'array per poter usare shift() nel rendering)
         const titolariByRole = formationData.titolari.reduce((acc, p) => {
             acc[p.role] = acc[p.role] || [];
             acc[p.role].push(p); 
             return acc;
         }, {});
         
+        // Pulisci i contenitori
         titolariSlots.innerHTML = '';
         panchinaSlots.innerHTML = '';
         fullSquadList.innerHTML = '';
         
+        // 2. Renderizza il Campo (Portiere e Linee)
         let fieldHtml = '';
         
-        // Portiere
+        // Struttura Portiere
+        // Utilizziamo una COPIA temporanea per il rendering
         const portiere = titolariByRole['P'] && titolariByRole['P'].length > 0 ? titolariByRole['P'].slice().shift() : null;
-        if (titolariByRole['P'] && titolariByRole['P'].length > 0) titolariByRole['P'].shift();
+        if (titolariByRole['P'] && titolariByRole['P'].length > 0) titolariByRole['P'].shift(); // Rimuove dalla copia temporanea usata per il rendering
 
         fieldHtml += `
             <div class="field-position-P w-full flex justify-center">
@@ -304,12 +345,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // Linee
+        // Struttura Linee (Difesa, Centrocampo, Attacco)
         const rolePositionsY = { 'D': 'field-position-D', 'C': 'field-position-C', 'A': 'field-position-A' };
         
         ROLES.filter(r => r !== 'P').forEach(role => {
             const slotsCount = currentModule[role];
-            if (slotsCount === 0) return;
+            if (slotsCount === 0) return; // Non renderizzare la linea se il modulo non la prevede
 
             fieldHtml += `
                 <div class="${rolePositionsY[role]} w-full flex justify-center items-center">
@@ -317,7 +358,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     <div class="flex justify-around w-full px-12">
                         ${Array(slotsCount).fill().map((_, index) => {
+                            // Cerca il giocatore titolare per questo slot (se esiste)
                             const player = titolariByRole[role] && titolariByRole[role].length > 0 ? titolariByRole[role].shift() : null; 
+                            
                             return `
                                 <div class="jersey-container w-16 h-16">
                                     ${createPlayerSlot(role, index, player)}
@@ -331,80 +374,174 @@ document.addEventListener('DOMContentLoaded', () => {
         
         titolariSlots.innerHTML = fieldHtml; 
         
-        // Panchina
+        // 3. Renderizza la Panchina
         panchinaSlots.innerHTML = teamData.formation.panchina.map((player, index) => {
             return `<div class="jersey-container w-16 h-16">${createPlayerSlot('B', index, player)}</div>`; 
         }).join('');
         
+        // Aggiunge slot vuoti se necessario (Max 3)
         panchinaSlots.innerHTML += Array(3 - teamData.formation.panchina.length).fill().map((_, index) => {
             return `<div class="jersey-container w-16 h-16">${createPlayerSlot('B', teamData.formation.panchina.length + index, null)}</div>`;
         }).join('');
 
-        // Rosa Completa
+        // 4. Renderizza la Rosa Completa (i rimanenti)
         if (availablePlayers.length === 0) {
              fullSquadList.innerHTML = '<p class="text-gray-400">Nessun giocatore disponibile (tutti in campo o in panchina).</p>';
         } else {
             fullSquadList.innerHTML = availablePlayers.map(player => `
                 <div draggable="true" data-id="${player.id}" data-role="${player.role}" data-cost="${player.cost}"
                      class="player-card p-2 bg-gray-600 text-white rounded-lg shadow cursor-grab hover:bg-gray-500 transition duration-100 z-10"
-                     ondragstart="window.handleDragStart(event)"
-                     ondragend="window.handleDragEnd(event)">
+                     ondragstart="window.handleDragStart(event)">
                     ${player.name} (${player.role}) (Liv: ${player.level})
                 </div>
             `).join('');
         }
+        
+        attachDragListeners();
     };
     
+    /**
+     * Renderizza l'interfaccia per la Gestione Formazione.
+     * @param {object} teamData - I dati della squadra.
+     */
     const renderFormazioneManagement = (teamData) => {
         squadraMainTitle.textContent = "Gestione Formazione";
         squadraSubtitle.textContent = `Modulo Attuale: ${teamData.formation.modulo} | Trascina i giocatori in campo!`;
         
         squadraToolsContainer.innerHTML = `
             <style>
-                /* STILI CSS OMAGGIO PER IL CAMPO */
+                /* Stili CSS specifici per il campo da gioco */
                 #field-area {
+                    /* Sfondo Campo Calcio Verde Scuro */
                     background-image: 
                         linear-gradient(to right, #14532d, #052e16),
                         url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="%2314532d" /><rect x="0" y="0" width="100" height="20" fill="%23052e16" /><rect x="0" y="40" width="100" height="20" fill="%23052e16" /><rect x="0" y="80" width="100" height="20" fill="%23052e16" /></svg>');
                     background-size: cover;
                     background-repeat: no-repeat;
                     position: relative;
-                    overflow: hidden;
+                    overflow: hidden; /* Nasconde ciò che va fuori */
+                    /* Bordo esterno */
                     border: 4px solid white;
-                    border-radius: 8px;
+                    border-radius: 8px; /* Angoli leggermente arrotondati */
                 }
+                
+                /* Pseudo-elementi per disegnare le linee del campo */
                 #field-area::before {
-                    content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background-color: white; transform: translateY(-50%); z-index: 0; 
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 0;
+                    right: 0;
+                    height: 2px;
+                    background-color: white; /* Linea di metà campo */
+                    transform: translateY(-50%);
+                    z-index: 0; 
                 }
+                
                 #field-area::after {
-                    content: ''; position: absolute; top: 0; left: 50%; bottom: 0; width: 2px; background-color: white; transform: translateX(-50%); z-index: 0; 
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: 50%;
+                    bottom: 0;
+                    width: 2px;
+                    background-color: white; /* Linea centrale verticale (non tipica, ma utile per visualizzazione) */
+                    transform: translateX(-50%);
+                    z-index: 0; 
                 }
-                #field-area .center-circle {
-                    position: absolute; top: 50%; left: 50%; width: 100px; height: 100px; border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%); z-index: 0; 
-                }
-                #field-area .penalty-area-top, #field-area .penalty-area-bottom {
-                    position: absolute; left: 50%; transform: translateX(-50%); width: 80%; height: 100px; border: 2px solid white; border-top: none; border-bottom: none; z-index: 0; 
-                }
-                #field-area .penalty-area-top { top: 0; border-bottom: 2px solid white; }
-                #field-area .penalty-area-bottom { bottom: 0; border-top: 2px solid white; }
 
-                .player-card { cursor: grab; }
-                .empty-slot { border: 2px dashed #4ade80; }
-                #titolari-slots { position: relative; height: 100%; }
-                #panchina-slots { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
-                .jersey-container { padding: 0.25rem; }
+                /* Cerchio di centrocampo */
+                #field-area .center-circle {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    width: 100px; /* Diametro cerchio */
+                    height: 100px;
+                    border: 2px solid white;
+                    border-radius: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 0; 
+                }
+
+                /* Aree di rigore (semplificate) */
+                #field-area .penalty-area-top,
+                #field-area .penalty-area-bottom {
+                    position: absolute;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 80%; /* Larghezza area di rigore */
+                    height: 100px; /* Altezza area di rigore */
+                    border: 2px solid white;
+                    border-top: none;
+                    border-bottom: none;
+                    z-index: 0; 
+                }
+                #field-area .penalty-area-top {
+                    top: 0;
+                    border-bottom: 2px solid white;
+                }
+                #field-area .penalty-area-bottom {
+                    bottom: 0;
+                    border-top: 2px solid white;
+                }
+
+                /* Stili per le card dei giocatori */
+                .player-card {
+                    cursor: grab;
+                }
+                .empty-slot {
+                    border: 2px dashed #4ade80;
+                }
+                #titolari-slots {
+                    position: relative;
+                    height: 100%;
+                }
+                #panchina-slots {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-start;
+                    gap: 8px;
+                }
+                
+                /* Contenitore Maglietta, impostato a 1/3 della larghezza originale (w-16 h-16) */
+                .jersey-container {
+                    padding: 0.25rem; /* Padding interno */
+                }
+                
+                /* Posizionamento specifico per i ruoli sul campo */
                 .field-position-P { position: absolute; top: 5%; width: 100%; }
                 .field-position-D { position: absolute; top: 30%; width: 100%; }
                 .field-position-C { position: absolute; top: 55%; width: 100%; }
                 .field-position-A { position: absolute; top: 80%; width: 100%; }
-                .slot-target { z-index: 10; position: relative; width: 100%; height: 100%; border-radius: 6px; padding: 0; box-sizing: border-box; line-height: 1; }
-                .empty-slot.slot-target { border: 2px dashed #4ade80; padding: 0.5rem; }
+
+                /* Nuovo stile per assicurare che gli slot siano sopra le linee */
+                .slot-target {
+                    z-index: 10;
+                    position: relative; 
+                    
+                    /* STILE MAGLIETTA (Correzione: forma più semplice e visibile) */
+                    width: 100%;
+                    height: 100%;
+                    border-radius: 6px; /* Bordo arrotondato */
+                    padding: 0;
+                    box-sizing: border-box;
+                    
+                    /* Regola il testo per renderlo più leggibile */
+                    line-height: 1;
+                }
+                .empty-slot.slot-target {
+                    border: 2px dashed #4ade80;
+                    padding: 0.5rem;
+                }
+
             </style>
             
             <div id="formation-message" class="text-center mb-4 text-red-400"></div>
 
             <div class="flex flex-col lg:flex-row gap-6">
-                <div class="lg:w-1/3 p-4 bg-gray-800 rounded-lg border border-indigo-500 space-y-4">
+                
+
+<div class="lg:w-1/3 p-4 bg-gray-800 rounded-lg border border-indigo-500 space-y-4">
                     <h3 class="text-xl font-bold text-indigo-400 border-b border-gray-600 pb-2">Seleziona Modulo</h3>
                     <select id="formation-select" class="w-full p-2 rounded-lg bg-gray-700 text-white border border-indigo-600">
                         ${Object.keys(MODULI).map(mod => `<option value="${mod}" ${teamData.formation.modulo === mod ? 'selected' : ''}>${mod}</option>`).join('')}
@@ -415,24 +552,41 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div id="full-squad-list" class="space-y-2 max-h-96 overflow-y-auto min-h-[100px] border border-gray-700 p-2 rounded-lg"
                          ondragover="event.preventDefault();"
                          ondrop="window.handleDrop(event, 'ROSALIBERA')">
+                        
+
+<p class="text-center text-gray-400">Trascina qui i giocatori dalla panchina o dal campo per liberarli.</p>
                     </div>
                 </div>
                 
-                <div class="lg:w-2/3 space-y-4">
-                    <div id="field-area" class="h-[500px] rounded-lg shadow-xl p-4 text-center">
+                
+
+<div class="lg:w-2/3 space-y-4">
+                    
+
+<div id="field-area" class="h-[500px] rounded-lg shadow-xl p-4 text-center">
                         <h4 class="text-white font-bold mb-4 z-10 relative">Campo (Titolari) - Modulo: ${teamData.formation.modulo}</h4>
-                        <div class="center-circle"></div>
+                        
+
+<div class="center-circle"></div>
                         <div class="penalty-area-top"></div>
                         <div class="penalty-area-bottom"></div>
-                        <div id="titolari-slots" class="h-full"></div>
+                        
+                        <div id="titolari-slots" class="h-full">
+                            
+
+</div>
                     </div>
                     
-                    <div id="bench-container" class="bg-gray-800 p-3 rounded-lg border-2 border-indigo-500 h-32">
+                    
+
+<div id="bench-container" class="bg-gray-800 p-3 rounded-lg border-2 border-indigo-500 h-32">
                         <h4 class="text-indigo-400 font-bold mb-2">Panchina (Max 3 Giocatori)</h4>
                         <div id="panchina-slots" class="h-16 items-center flex space-x-2"
                              ondragover="event.preventDefault();"
                              ondrop="window.handleDrop(event, 'B')">
-                        </div>
+                             
+
+</div>
                     </div>
                     
                     <button id="btn-save-formation"
@@ -443,144 +597,198 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
         
+        // Cablaggi Iniziali e DnD
         const formationSelect = document.getElementById('formation-select');
         formationSelect.addEventListener('change', (e) => {
             const newModule = e.target.value;
+
+            // --- LOGICA DI RESET ---
             currentTeamData.formation.titolari = [];
             currentTeamData.formation.panchina = [];
+            
+            // Aggiorna il modulo
             currentTeamData.formation.modulo = newModule;
+            
+            // Ridisegna e mostra il messaggio
             renderFieldSlots(currentTeamData); 
             displayMessage('formation-message', `Modulo cambiato in ${newModule}. Rischiera i tuoi giocatori.`, 'info');
+            // -----------------------------
+            
             document.getElementById('module-description').textContent = MODULI[newModule].description;
-            document.querySelector('#field-area h4').textContent = `Campo (Titolari) - Modulo: ${newData.formation.modulo}`;
+            document.querySelector('#field-area h4').textContent = `Campo (Titolari) - Modulo: ${newModule}`;
         });
         
         document.getElementById('btn-save-formation').addEventListener('click', handleSaveFormation);
+
+        // Inizializza gli slot e i giocatori
         renderFieldSlots(teamData); 
+        // L'attacco degli ascoltatori di drag è gestito in renderFieldSlots
     };
 
+    /**
+     * Attacca gli ascoltatori di drag ai giocatori esistenti e ai nuovi.
+     */
+    const attachDragListeners = () => {
+        // La funzione createPlayerSlot aggiunge già ondragstart.
+        // Questa funzione è mantenuta per futuri cablaggi dinamici, ma non è strettamente necessaria ora.
+    };
+    
+    // -------------------------------------------------------------------
+    // LOGICA DRAG & DROP
+    // -------------------------------------------------------------------
+
+    // VARIABILE GLOBALE PER IL GIOCATORE IN DRAG (Fix Essenziale)
+    let draggedElementData = {}; 
+    let currentDragTarget = null; // Riferimento DOM all'elemento trascinato
+
+    /**
+     * Gestisce l'inizio del trascinamento.
+     */
     window.handleDragStart = (e) => {
+        // CORREZIONE: Assicurati che il target sia l'elemento draggabile corretto che contiene data-id.
         const dragTarget = e.target.closest('.slot-target') || e.target.closest('.player-card');
+
         if (!dragTarget || !dragTarget.dataset.id) {
              e.preventDefault();
              return;
         }
+
+        // 1. Salva i dati essenziali: ID del giocatore
+        currentDraggedPlayerId = dragTarget.dataset.id;
+        currentDragTarget = dragTarget; // Riferimento all'elemento DOM trascinato
         
-        // 1. SALVATAGGIO DELL'ID SU DATA TRANSFER (FIX AFFIDABILE)
-        e.dataTransfer.setData('text/plain', dragTarget.dataset.id);
+        e.dataTransfer.setData('text/plain', currentDraggedPlayerId);
         
-        // 2. Solo per il feedback visivo
-        currentDragTarget = dragTarget; 
+        // 2. Aggiunge un feedback visivo
         setTimeout(() => dragTarget.classList.add('opacity-50', 'border-4', 'border-indigo-400'), 0);
     };
 
     /**
-     * Pulisce lo stato globale al termine del drag.
-     */
-    window.handleDragEnd = (e) => {
-        if (currentDragTarget) {
-            currentDragTarget.classList.remove('opacity-50', 'border-4', 'border-indigo-400');
-        }
-        currentDragTarget = null; 
-    };
-
-    /**
      * Rimuove il giocatore dalla sua posizione corrente (titolari o panchina).
+     * @param {string} playerId - ID del giocatore da rimuovere.
      */
     const removePlayerFromCurrentPosition = (playerId) => {
         currentTeamData.formation.titolari = currentTeamData.formation.titolari.filter(p => p.id !== playerId);
         currentTeamData.formation.panchina = currentTeamData.formation.panchina.filter(p => p.id !== playerId);
     };
 
+
+    /**
+     * Gestisce il drop in uno slot o nella panchina.
+     * @param {Event} e - Evento di drop.
+     * @param {string} targetRole - Ruolo dello slot di destinazione (P, D, C, A, B, ROSALIBERA).
+     */
     window.handleDrop = (e, targetRole) => {
         e.preventDefault();
         
-        // 1. RECUPERO L'ID DAL DATATRASFER
-        const droppedId = e.dataTransfer.getData('text/plain');
+        // 1. Recupera l'ID dal campo globale (più affidabile)
+        const droppedId = currentDraggedPlayerId;
         const formationMessage = document.getElementById('formation-message');
         
-        // FIX CRITICO: Controlla che l'ID esista PRIMA di cercare.
-        if (!droppedId) {
-             return displayMessage('formation-message', 'Drop fallito: ID Giocatore non trasferito.', 'error');
+        // Rimuove il feedback visivo dall'elemento DOM trascinato (se ancora esiste nel DOM)
+        if (currentDragTarget) {
+            currentDragTarget.classList.remove('opacity-50', 'border-4', 'border-indigo-400');
+            currentDragTarget = null; // Reset
         }
         
+        // 2. Giocatore non trovato nella rosa (Controlla che l'ID sia valido)
         const player = currentTeamData.players.find(p => p.id === droppedId);
-        
-        // Se non c'è ID, il drop è fallito o i dati sono rotti.
+        // Questo è il punto critico: Se il giocatore non è trovato, l'ID è un problema.
         if (!player) {
              return displayMessage('formation-message', 'Errore: Giocatore non trovato nella rosa (ID non valido).', 'error');
         }
 
-        // 2. TROVARE IL TARGET REALE
+
+        // 3. TROVARE IL TARGET REALE e il ruolo di destinazione
+        // Identifica lo slot target (occupato o vuoto)
         let actualDropSlot = e.target.closest('.slot-target'); 
         
-        // Se il drop non è su uno slot specifico, controlla se è su uno dei contenitori generici
+        // Se il drop non è su uno slot specifico, controlla se è su uno dei contenitori generali
         if (!actualDropSlot) {
             actualDropSlot = e.target.closest('#panchina-slots') || e.target.closest('#full-squad-list');
         }
+
+        // Se non troviamo un elemento di drop valido, blocca il drop.
         if (!actualDropSlot) {
-             return displayMessage('formation-message', 'Drop non valido.', 'error');
+             return displayMessage('formation-message', 'Drop non valido. Trascina direttamente su uno slot designato o un contenitore.', 'error');
         }
 
+        // Determina il ruolo di destinazione finale (P, D, C, A, B, ROSALIBERA)
         const finalTargetRole = actualDropSlot.dataset.role || targetRole;
         
         
-        // 3. Verifica slot occupato (per gestire lo scambio)
+        // 4. Verifica se lo slot di destinazione è occupato (per gestire lo scambio implicito)
         let playerInSlotBeforeDrop = null;
         
-        // Cerca il giocatore nello slot di destinazione (se occupato)
-        if (actualDropSlot.classList.contains('player-card')) {
+        // Se il drop avviene su uno slot titolare (P, D, C, A) che è OCCUPATO
+        if (['P', 'D', 'C', 'A'].includes(finalTargetRole) && actualDropSlot.classList.contains('player-card')) {
             const occupiedPlayerId = actualDropSlot.dataset.id;
-            
-            // Se lo slot è occupato da un giocatore DIVERSO da quello che sto trascinando
-            if (occupiedPlayerId && occupiedPlayerId !== player.id) {
+            // Cerchiamo il giocatore nello slot (se non è lo stesso giocatore che sto trascinando)
+            if (occupiedPlayerId !== player.id) {
                  playerInSlotBeforeDrop = currentTeamData.players.find(p => p.id === occupiedPlayerId);
             }
         }
         
-        // 4. Rimuovi il giocatore trascinato dalla sua posizione corrente (PRIMA DEL DROP)
+        // 5. Rimuovi il giocatore trascinato dalla sua posizione corrente
         removePlayerFromCurrentPosition(player.id);
         
         
-        // 5. Logica di Inserimento
+        // 6. Logica di Inserimento
         if (finalTargetRole === 'ROSALIBERA') {
-            if (playerInSlotBeforeDrop) removePlayerFromCurrentPosition(playerInSlotBeforeDrop.id);
+            // Se c'era un giocatore nello slot occupato (gestione scambio)
+            if (playerInSlotBeforeDrop) {
+                 // Sposto il giocatore che era nello slot in ROSALIBERA (anche se non lo aggiungo all'array)
+                 removePlayerFromCurrentPosition(playerInSlotBeforeDrop.id);
+            }
             displayMessage('formation-message', `${player.name} liberato da campo/panchina.`, 'success');
             
         } else if (finalTargetRole === 'B') {
             // Drop sulla Panchina
             
-            if (playerInSlotBeforeDrop) {
-                // Se c'era un giocatore, lo rimuoviamo e andrà in ROSALIBERA al prossimo render
-                removePlayerFromCurrentPosition(playerInSlotBeforeDrop.id); 
-                displayMessage('formation-message', `${player.name} in panchina. ${playerInSlotBeforeDrop.name} liberato.`, 'info');
+            // Gestione Scambio: Se il drop è avvenuto su uno slot panchina occupato
+            if (actualDropSlot.classList.contains('player-card') && actualDropSlot.dataset.role === 'B') {
+                const occupiedPlayerId = actualDropSlot.dataset.id;
+                const occupiedPlayer = currentTeamData.players.find(p => p.id === occupiedPlayerId);
+                
+                if (occupiedPlayer && occupiedPlayer.id !== player.id) {
+                    removePlayerFromCurrentPosition(occupiedPlayer.id); // Libera lo slot
+                    displayMessage('formation-message', `${occupiedPlayer.name} spostato in ROSALIBERA.`, 'info');
+                }
             } else if (currentTeamData.formation.panchina.length >= 3) {
                  return displayMessage('formation-message', 'La panchina è piena (Max 3).', 'error');
             }
+            
+            // Aggiunge in panchina
             currentTeamData.formation.panchina.push(player);
             displayMessage('formation-message', `${player.name} spostato in panchina.`, 'success');
             
         } else {
             // Drop sul Campo (Titolari - P, D, C, A)
             
+            // 6a. Gestione Scambio: se c'era un giocatore nello slot, liberarlo
             if (playerInSlotBeforeDrop) {
-                 // Rimuovi il giocatore che era nello slot titolare (andranno in ROSALIBERA)
-                 removePlayerFromCurrentPosition(playerInSlotBeforeDrop.id);
+                 // Rimuovi il giocatore che era nello slot titolare (già fatto al punto 5, ma per chiarezza logica)
                  displayMessage('formation-message', `${player.name} ha preso il posto di ${playerInSlotBeforeDrop.name}.`, 'info');
-            } else {
-                 displayMessage('formation-message', `${player.name} messo in campo come ${finalTargetRole}.`, 'success');
             }
 
-            // Inserisce il giocatore trascinato
+            // 6b. Inserisce il giocatore trascinato
             currentTeamData.formation.titolari.push(player);
+            displayMessage('formation-message', `${player.name} messo in campo come ${finalTargetRole}.`, 'success');
+
         }
         
-        // 6. Ridisegna l'interfaccia
+        // 7. Ridisegna l'interfaccia
         renderFieldSlots(currentTeamData);
     };
 
+
+    /**
+     * Salva la formazione attuale (titolari, panchina, modulo) su Firestore.
+     */
     const handleSaveFormation = async () => {
         const saveButton = document.getElementById('btn-save-formation');
+        const msgContainer = document.getElementById('formation-message');
+        
         saveButton.textContent = 'Salvataggio...';
         saveButton.disabled = true;
         displayMessage('formation-message', 'Salvataggio formazione in corso...', 'info');
@@ -588,6 +796,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const { updateDoc, doc } = firestoreTools;
         const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, currentTeamId);
 
+        // --- CONTROLLI DI VALIDAZIONE RIGIDI (DEVONO ESSERE MANTENUTI) ---
+
+        // 1. Portiere: Esattamente 1 in campo
         const portieriInCampo = currentTeamData.formation.titolari.filter(p => p.role === 'P').length;
         if (portieriInCampo !== 1) {
              displayMessage('formation-message', 'Errore: Devi schierare esattamente 1 Portiere in campo.', 'error');
@@ -595,6 +806,8 @@ document.addEventListener('DOMContentLoaded', () => {
              saveButton.disabled = false;
              return;
         }
+        
+        // 2. Titolari Totali: Esattamente 5
         const totalTitolari = currentTeamData.formation.titolari.length;
         if (totalTitolari !== 5) {
              displayMessage('formation-message', `Errore: Devi schierare esattamente 5 titolari (hai ${totalTitolari}).`, 'error');
@@ -602,6 +815,8 @@ document.addEventListener('DOMContentLoaded', () => {
              saveButton.disabled = false;
              return;
         }
+        
+        // 3. Panchina: Max 3 giocatori
         const totalPanchina = currentTeamData.formation.panchina.length;
         if (totalPanchina > 3) {
              displayMessage('formation-message', `Errore: Puoi avere un massimo di 3 giocatori in panchina (hai ${totalPanchina}).`, 'error');
@@ -610,13 +825,16 @@ document.addEventListener('DOMContentLoaded', () => {
              return;
         }
 
+
         try {
             await updateDoc(teamDocRef, {
                 formation: currentTeamData.formation
             });
+
             displayMessage('formation-message', 'Formazione salvata con successo!', 'success');
+            
         } catch (error) {
-            console.error("Errore nel salvataggio:", error);
+            console.error("Errore nel salvataggio della formazione:", error);
             displayMessage('formation-message', `Errore di salvataggio: ${error.message}`, 'error');
         } finally {
             saveButton.textContent = 'Salva Formazione';
@@ -624,15 +842,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // GESTIONE NAVIGAZIONE
+
+    // -------------------------------------------------------------------
+    // GESTIONE DELLA NAVIGAZIONE
+    // -------------------------------------------------------------------
+
+    // Gestisce il ritorno alla Dashboard Squadra
     squadraBackButton.addEventListener('click', () => {
-        if (window.showScreen && appContent) window.showScreen(appContent);
+        if (window.showScreen && appContent) {
+            window.showScreen(appContent);
+        }
     });
 
-    // Rende le funzioni DnD globali
+    // Rende le funzioni DnD globali per l'uso con gli attributi HTML ondragover/ondrop
     window.handleDragStart = window.handleDragStart || handleDragStart;
     window.handleDrop = window.handleDrop || handleDrop;
-    window.handleDragEnd = window.handleDragEnd || handleDragEnd;
 
+    // Ascolta l'evento lanciato da interfaccia.js per caricare il pannello
     document.addEventListener('squadraPanelLoaded', initializeSquadraPanel);
 });

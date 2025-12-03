@@ -53,37 +53,40 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const renderAdminDashboardLayout = () => {
         adminDashboardContainer.innerHTML = `
+            <!-- Pulsanti Navigazione Campionato/Draft -->
             <div class="mb-6 space-y-4">
                 <div class="grid grid-cols-2 gap-4">
-                    <!-- Pulsante per le Impostazioni Campionato (Regole) -->
+                    <!-- Impostazioni Campionato -->
                     <button id="btn-championship-settings"
                             class="bg-orange-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-orange-500 transition duration-150 transform hover:scale-[1.01]">
                         <i class="fas fa-cog mr-2"></i> Impostazioni Campionato
                     </button>
                     
-                    <!-- Pulsante per la Gestione Draft (Stato e Creazione Giocatori) -->
+                    <!-- Gestione Draft -->
                     <button id="btn-draft-mode"
                             class="bg-yellow-600 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-500 transition duration-150 transform hover:scale-[1.01]">
                         <i class="fas fa-list-ol mr-2"></i> Gestione Draft/Mercato
                     </button>
                 </div>
-
-                <div class="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
-                    <!-- Pulsante Mockup per Sincronizzazione -->
-                    <button id="btn-sync-data"
-                            class="bg-red-700 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-600 transition duration-150">
-                        Sincronizza Dati Calciatori (Mock)
-                    </button>
-                    
-                    <!-- Pulsante per Ricaricare le Squadre -->
-                     <button id="btn-refresh-teams"
-                            class="bg-gray-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-400 transition duration-150">
-                        Ricarica Squadre
-                    </button>
-                </div>
             </div>
             
-            <h3 class="text-2xl font-bold text-red-400 mb-4 border-b border-gray-600 pb-2">Elenco Squadre</h3>
+            <!-- Pulsanti Standard per Admin -->
+            <div class="grid grid-cols-2 gap-4 border-t border-gray-700 pt-4">
+                <!-- Pulsante Mockup per Sincronizzazione -->
+                <button id="btn-sync-data"
+                        class="bg-red-700 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-600 transition duration-150">
+                    Sincronizza Dati Calciatori (Mock)
+                </button>
+                
+                <!-- Pulsante per Ricaricare le Squadre -->
+                 <button id="btn-refresh-teams"
+                        class="bg-gray-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-400 transition duration-150">
+                    Ricarica Squadre
+                </button>
+            </div>
+            
+            <h3 class="text-2xl font-bold text-red-400 mb-4 border-b border-gray-600 pb-2 pt-6">Elenco Squadre (Gestione Partecipazione)</h3>
+            <p class="text-xs text-gray-400 mb-4">Seleziona le squadre che parteciperanno al calendario del campionato.</p>
             <div id="teams-list-container" class="space-y-3">
                 <p class="text-gray-400 text-center">Caricamento in corso...</p>
             </div>
@@ -95,11 +98,21 @@ document.addEventListener('DOMContentLoaded', () => {
             teamsListContainer.addEventListener('click', handleTeamAction);
         }
         
-        // Cabla i pulsanti di navigazione
+        // Cabla gli eventi
+        setupAdminButtonEvents();
+
+        // Carica e visualizza le squadre
+        loadTeams();
+    };
+    
+    /**
+     * Cabla gli eventi dei pulsanti di navigazione Admin (ORA PIÙ SEMPLICE)
+     */
+    const setupAdminButtonEvents = () => {
+        
         document.getElementById('btn-draft-mode').addEventListener('click', () => {
              if (window.showScreen) {
                  window.showScreen(draftContent);
-                 // Lancia l'evento in modalità 'admin'
                  document.dispatchEvent(new CustomEvent('draftPanelLoaded', { detail: { mode: 'admin' } })); 
              }
         });
@@ -112,10 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         document.getElementById('btn-refresh-teams').addEventListener('click', loadTeams);
-
-        // Carica e visualizza le squadre
-        loadTeams();
+        
+        // Non ci sono più i pulsanti Classifica/Calendario qui, quindi non c'è cablaggio.
     };
+
 
     /**
      * Carica tutte le squadre dalla collezione Firestore e le renderizza.
@@ -140,11 +153,22 @@ document.addEventListener('DOMContentLoaded', () => {
             querySnapshot.forEach(doc => {
                 const teamData = doc.data();
                 const teamId = doc.id;
+                const isParticipating = teamData.isParticipating || false;
                 
                 const date = teamData.creationDate ? new Date(teamData.creationDate).toLocaleDateString('it-IT') : 'N/A';
+                
+                const checkboxColorClasses = isParticipating ? 'bg-green-500 border-green-500' : 'bg-gray-700 border-gray-500';
 
                 teamsHtml += `
                     <div class="team-item flex flex-col sm:flex-row justify-between items-center p-4 bg-gray-800 rounded-lg border border-gray-600 hover:border-red-500 transition duration-150">
+                        <!-- Flag di Partecipazione -->
+                        <div class="flex items-center space-x-4 mb-2 sm:mb-0">
+                            <input type="checkbox" id="participating-${teamId}" data-team-id="${teamId}" data-action="toggle-participation"
+                                   class="form-checkbox h-5 w-5 rounded transition duration-150 ease-in-out ${checkboxColorClasses}"
+                                   ${isParticipating ? 'checked' : ''}>
+                            <label for="participating-${teamId}" class="text-gray-300 font-bold">Partecipa al Campionato</label>
+                        </div>
+
                         <!-- Dati Squadra -->
                         <div class="w-full sm:w-auto mb-2 sm:mb-0">
                             <p class="text-lg font-bold text-white">${teamData.teamName}</p>
@@ -176,7 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     /**
-     * Gestisce le azioni sui bottoni delle squadre (Elimina/Modifica).
+     * Gestisce le azioni sui bottoni delle squadre (Elimina/Modifica) e Toggle di partecipazione.
      */
     const handleTeamAction = async (event) => {
         const target = event.target;
@@ -184,8 +208,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const action = target.dataset.action;
 
         if (!teamId || !action) return;
+
+        if (action === 'toggle-participation') {
+            handleToggleParticipation(teamId, target.checked, target);
+            return;
+        }
         
-        // Logica di ELIMINAZIONE (come prima)
+        // Logica di ELIMINAZIONE
         if (action === 'delete') {
             // Logica di pre-conferma
             target.textContent = 'CONFERMA? (Click di nuovo)';
@@ -210,7 +239,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (error) {
                 console.error(`Errore durante l'eliminazione della squadra ${teamId}:`, error);
-                // In caso di errore, ripristina lo stato del pulsante
                 target.textContent = 'Elimina';
                 target.classList.remove('bg-orange-500');
                 target.classList.add('bg-red-600');
@@ -220,19 +248,58 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Logica di MODIFICA (NUOVA)
+        // Logica di MODIFICA
         if (action === 'edit') {
             openEditTeamModal(teamId);
         }
     };
-    
+
+    /**
+     * Aggiorna lo stato di partecipazione di una squadra su Firestore.
+     */
+    const handleToggleParticipation = async (teamId, isChecked, checkboxElement) => {
+        const { doc, updateDoc } = firestoreTools;
+        const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, teamId);
+        
+        const label = checkboxElement.closest('.team-item').querySelector('label');
+        
+        // Aggiorna l'UI immediatamente
+        checkboxElement.disabled = true;
+        label.textContent = 'Salvando...';
+
+        try {
+            await updateDoc(teamDocRef, {
+                isParticipating: isChecked
+            });
+            
+            // AGGIORNAMENTO CLASSI CORRETTO 
+            if (isChecked) {
+                checkboxElement.classList.remove('bg-gray-700', 'border-gray-500');
+                checkboxElement.classList.add('bg-green-500', 'border-green-500');
+            } else {
+                checkboxElement.classList.remove('bg-green-500', 'border-green-500');
+                checkboxElement.classList.add('bg-gray-700', 'border-gray-500');
+            }
+            
+            // Aggiorna l'UI dopo il salvataggio
+            label.textContent = 'Partecipa al Campionato';
+
+        } catch (error) {
+            console.error(`Errore nell'aggiornamento partecipazione per ${teamId}:`, error);
+            // In caso di errore, ripristina la spunta e l'etichetta
+            checkboxElement.checked = !isChecked;
+            label.textContent = 'Errore di salvataggio!';
+        } finally {
+            checkboxElement.disabled = false;
+        }
+    };
+
     // -------------------------------------------------------------------
     // LOGICA MODALE DI MODIFICA SQUADRA
     // -------------------------------------------------------------------
 
     /**
      * Apre la modale per modificare la squadra.
-     * @param {string} teamId - L'ID della squadra da modificare.
      */
     const openEditTeamModal = async (teamId) => {
         const { doc, getDoc } = firestoreTools;
@@ -247,21 +314,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
         } catch (error) {
             console.error("Errore nel caricamento dei dati per la modifica:", error);
-            // Mostra un messaggio di errore nel pannello Admin
             document.getElementById('teams-list-container').innerHTML = `<p class="text-center text-red-500">Errore nel caricamento dei dati di modifica: ${error.message}</p>`;
         }
     };
     
     /**
      * Renderizza la struttura HTML della modale e la aggiunge al DOM.
-     * @param {string} teamId - L'ID della squadra.
-     * @param {object} teamData - I dati attuali della squadra.
      */
     const renderEditTeamModal = (teamId, teamData) => {
         // Chiude qualsiasi modale esistente
-        closeEditTeamModal();
+        if (modalInstance) {
+            modalInstance.remove();
+            modalInstance = null;
+        }
 
-        // Trasforma l'array di giocatori in una stringa JSON per l'editing
         const playersJsonString = JSON.stringify(teamData.players, null, 2); 
 
         const modalHtml = `
@@ -302,11 +368,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // Aggiunge la modale al DOM (al body o main)
         mainElement.insertAdjacentHTML('beforeend', modalHtml);
         modalInstance = document.getElementById('edit-team-modal');
         
-        // Cabla gli ascoltatori della modale
         document.getElementById('btn-cancel-edit').addEventListener('click', closeEditTeamModal);
         document.getElementById('edit-team-form').addEventListener('submit', handleSaveTeamEdit);
     };

@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
     
-    // --- NUOVO: HELPER GLOBALE PER NUMERI CASUALI ---
+    // --- HELPER GLOBALE PER NUMERI CASUALI --
     /**
      * Helper per generare un numero intero casuale tra min (incluso) e max (incluso).
      * Esposto globalmente per essere usato da tutti i moduli.
@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
         max = Math.floor(max);
         return Math.floor(Math.random() * (max - min + 1)) + min;
     };
-    window.getRandomInt = getRandomInt;
+    window.getRandomInt = getRandomInt; // Esposta per tutti i moduli
     // --- FINE HELPER GLOBALE ---
 
 
@@ -52,7 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const leaderboardContent = document.getElementById('leaderboard-content');
     const scheduleContent = document.getElementById('schedule-content');
     const squadraContent = document.getElementById('squadra-content');
-    
+    const mercatoContent = document.getElementById('mercato-content'); 
+
     // Riferimenti agli elementi della Dashboard Utente
     const teamDashboardTitle = document.getElementById('team-dashboard-title');
     const teamWelcomeMessage = document.getElementById('team-welcome-message');
@@ -71,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnGestioneRosa = document.getElementById('btn-gestione-rosa');
     const btnGestioneFormazione = document.getElementById('btn-gestione-formazione');
     const btnDraftUtente = document.getElementById('btn-draft-utente');
+    const btnMercatoUtente = document.getElementById('btn-mercato-utente'); 
     const btnDashboardLeaderboard = document.getElementById('btn-dashboard-leaderboard');
     const btnDashboardSchedule = document.getElementById('btn-dashboard-schedule');
 
@@ -96,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gatePasswordInput = document.getElementById('gate-password');
     const gateButton = document.getElementById('gate-button');
     const gateMessage = document.getElementById('gate-message');
-    const MASTER_PASSWORD = "seria"; // <-- DEFINIZIONE UNICA QUI (Scope corretto)
+    const MASTER_PASSWORD = "seria"; 
 
     
     // Credenziali Admin Hardcoded
@@ -191,6 +193,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     /**
      * Aggiorna l'interfaccia utente con i dati della squadra.
+     * @param {string} teamName - Nome della squadra.
+     * @param {string} teamDocId - ID del documento Firestore.
+     * @param {string} logoUrl - URL del logo.
+     * @param {boolean} isNew - Se è una nuova squadra.
      */
     const updateTeamUI = (teamName, teamDocId, logoUrl, isNew) => {
         teamDashboardTitle.textContent = `Dashboard di ${teamName}`;
@@ -201,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTeamId = teamDocId; // Salva l'ID corrente
         teamLogoElement.src = logoUrl || DEFAULT_LOGO_URL; // Aggiorna il logo
         
-        // NUOVO: Calcolo e aggiornamento statistiche
+        // Calcolo e aggiornamento statistiche
         const allPlayers = currentTeamData.players || [];
         const formationPlayers = getFormationPlayers(currentTeamData);
         
@@ -216,6 +222,108 @@ document.addEventListener('DOMContentLoaded', () => {
         // Carica la prossima partita al caricamento della Dashboard
         loadNextMatch();
     };
+    
+    /**
+     * Ricarica solo i dati della squadra (utile dopo acquisti/licenziamenti) e aggiorna la UI.
+     */
+    const reloadTeamDataAndUpdateUI = async () => {
+        if (!currentTeamId) return;
+
+        try {
+            const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, currentTeamId);
+            const teamDoc = await getDoc(teamDocRef);
+            
+            if (teamDoc.exists()) {
+                currentTeamData = teamDoc.data();
+                updateTeamUI(currentTeamData.teamName, teamDocRef.id, currentTeamData.logoUrl, false);
+            } else {
+                 console.error("Errore: Impossibile trovare i dati della squadra corrente per l'aggiornamento.");
+            }
+        } catch (error) {
+             console.error("Errore nel ricaricamento dati squadra:", error);
+        }
+    };
+    
+    // Gestisce l'evento personalizzato per l'aggiornamento della dashboard
+    document.addEventListener('dashboardNeedsUpdate', reloadTeamDataAndUpdateUI);
+
+
+    // --- GESTIONE PERSISTENZA SESSIONE ---
+
+    /**
+     * Salva i dati della sessione in localStorage.
+     * @param {string} teamId - L'ID del documento della squadra o l'ID Admin (serieseria).
+     * @param {string} userType - 'admin' o 'user'.
+     */
+    const saveSession = (teamId, userType) => {
+        try {
+            localStorage.setItem('fanta_session_id', teamId);
+            localStorage.setItem('fanta_session_type', userType);
+        } catch (e) {
+            console.error("Impossibile salvare la sessione in localStorage.", e);
+        }
+    };
+
+    /**
+     * Cancella i dati della sessione da localStorage.
+     */
+    const clearSession = () => {
+        try {
+            localStorage.removeItem('fanta_session_id');
+            localStorage.removeItem('fanta_session_type');
+        } catch (e) {
+            console.error("Impossibile pulire la sessione da localStorage.", e);
+        }
+    };
+    
+    /**
+     * Carica i dati della sessione salvata e tenta l'accesso diretto.
+     */
+    const restoreSession = async () => {
+        const teamId = localStorage.getItem('fanta_session_id');
+        const userType = localStorage.getItem('fanta_session_type');
+        
+        if (!teamId || !userType) {
+            return false; // Nessuna sessione salvata
+        }
+
+        // Tenta l'accesso Admin
+        if (userType === 'admin' && teamId === ADMIN_USERNAME_LOWER) {
+            console.log("Sessione Admin ripristinata.");
+            window.showScreen(adminContent);
+            document.dispatchEvent(new CustomEvent('adminLoggedIn'));
+            return true;
+        }
+
+        // Tenta l'accesso Utente
+        if (userType === 'user') {
+            try {
+                const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, teamId);
+                const teamDoc = await getDoc(teamDocRef);
+
+                if (teamDoc.exists()) {
+                    const teamData = teamDoc.data();
+                    currentTeamData = teamData;
+                    await fetchAllTeamLogos(); 
+                    
+                    console.log(`Sessione Utente per ${teamData.teamName} ripristinata.`);
+                    updateTeamUI(teamData.teamName, teamDocRef.id, teamData.logoUrl, false);
+                    window.showScreen(appContent);
+                    return true;
+                }
+            } catch (error) {
+                console.error("Errore nel ripristino della sessione utente:", error);
+                clearSession(); // Pulisce la sessione rotta
+                return false;
+            }
+        }
+        
+        clearSession(); // Sessione non valida o rotta
+        return false;
+    };
+    
+    // --- FINE GESTIONE PERSISTENZA SESSIONE ---
+    
     
     /**
      * Gestisce il click sul logo per richiedere un nuovo URL.
@@ -234,7 +342,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (trimmedUrl === "" || !trimmedUrl.startsWith('http')) {
              const finalUrl = trimmedUrl.startsWith('http') ? trimmedUrl : DEFAULT_LOGO_URL;
              if (trimmedUrl !== "" && !trimmedUrl.startsWith('http')) {
-                 alert("Per favore, inserisci un URL valido (deve iniziare con http/https). Verrà utilizzato il placeholder.");
+                 // Sostituito alert() con una simulazione (ideale sarebbe una modale personalizzata)
+                 console.warn("Per favore, inserisci un URL valido (deve iniziare con http/https). Verrà utilizzato il placeholder.");
              }
              teamLogoElement.src = finalUrl;
              currentTeamData.logoUrl = finalUrl;
@@ -261,7 +370,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("Logo aggiornato su Firestore con successo.");
         } catch (error) {
             console.error("Errore nel salvataggio del logo:", error);
-            alert("Errore nel salvataggio del logo su Firestore. Controlla la console.");
+            // Sostituito alert()
+            console.error("Errore nel salvataggio del logo su Firestore. Controlla la console.");
         }
     };
     
@@ -350,6 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Funzione helper per il logout (definita in interfaccia.js per renderla globale)
     window.handleLogout = () => {
         console.log("Logout Utente effettuato. Torno alla schermata di login.");
+        
+        clearSession(); // Pulisce la sessione
+        
         loginPasswordInput.value = '';
         window.showScreen(loginBox);
         currentTeamId = null;
@@ -381,6 +494,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (draftAdminContent) {
             window.showScreen(draftAdminContent);
             document.dispatchEvent(new CustomEvent('draftPanelLoaded', { detail: { mode: 'utente', teamId: currentTeamId } }));
+        }
+    });
+    
+    // NUOVO: BOTTONE MERCATO
+    btnMercatoUtente.addEventListener('click', () => {
+        const mercatoContentRef = document.getElementById('mercato-content');
+        if (mercatoContentRef) {
+            window.showScreen(mercatoContentRef);
+            document.dispatchEvent(new CustomEvent('mercatoPanelLoaded', { detail: { teamId: currentTeamId } }));
         }
     });
     
@@ -429,6 +551,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadSchedule = async () => {
         const { doc, getDoc } = firestoreTools;
         const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+
+        const scheduleDisplayContainer = document.getElementById('schedule-content') ? document.getElementById('schedule-content').querySelector('.football-box > div:not([id])') : null;
+        if (!scheduleDisplayContainer) return;
+
 
         scheduleDisplayContainer.innerHTML = `
             <p class="text-white font-semibold">Caricamento Calendario...</p>
@@ -509,6 +635,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadLeaderboard = async () => {
         const { doc, getDoc } = firestoreTools;
         const leaderboardDocRef = doc(db, LEADERBOARD_COLLECTION_PATH, LEADERBOARD_DOC_ID);
+
+        const leaderboardDisplayContainer = document.getElementById('leaderboard-content') ? document.getElementById('leaderboard-content').querySelector('.football-box > div:not([id])') : null;
+        if (!leaderboardDisplayContainer) return;
 
         leaderboardDisplayContainer.innerHTML = `
             <p class="text-white font-semibold text-center">Caricamento Classifica...</p>
@@ -593,15 +722,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const handleGateAccess = () => {
         const password = gatePasswordInput.value.trim();
-        // REMOVED: const MASTER_PASSWORD = "seria"; // Errore di scope
         
         gateMessage.textContent = "";
 
-        if (password === MASTER_PASSWORD) { // USES MASTER_PASSWORD DEFINED AT LINE 71
+        if (password === MASTER_PASSWORD) { 
             gateMessage.textContent = "Accesso Gate Confermato. Prosegui al Login...";
             gateMessage.classList.remove('text-red-400');
             gateMessage.classList.add('text-green-500');
 
+            // Salta il gate, ma non salvare la sessione gate
             setTimeout(() => {
                 window.showScreen(loginBox);
                 loginUsernameInput.focus();
@@ -661,6 +790,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
+            // Accesso Admin Riuscito -> SALVA SESSIONE ADMIN
+            saveSession(teamDocId, 'admin');
+
             loginMessage.textContent = "Accesso Amministratore Riuscito!";
             setTimeout(() => {
                 window.showScreen(adminContent);
@@ -713,6 +845,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginMessage.textContent = `Congratulazioni! Squadra '${teamNameForDisplay}' creata con ${initialBudget} Crediti Seri e 5 giocatori base!`;
             }
 
+            // Accesso Utente Riuscito -> SALVA SESSIONE UTENTE
+            saveSession(teamDocId, 'user');
+
             // Imposta la variabile globale con i dati caricati/creati
             currentTeamData = teamData;
             
@@ -742,8 +877,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') handleLoginAccess();
     });
 
+    // --- LOGICA DI AVVIO ---
+    
     // Inizializzazione: Assicurati che solo il Gate Box sia visibile all'inizio
-    if (gateBox) {
-        gateBox.classList.remove('hidden-on-load');
-    }
+    const initApp = async () => {
+        if (gateBox) {
+            // Tenta di ripristinare la sessione all'avvio
+            const sessionRestored = await restoreSession(); 
+            
+            if (!sessionRestored) {
+                // Se non c'è sessione, mostra il Gate Box
+                gateBox.classList.remove('hidden-on-load');
+                window.showScreen(gateBox);
+            }
+        }
+    };
+
+    // Chiama la funzione di inizializzazione dopo che il DOM è pronto e Firebase è pronto
+    setTimeout(initApp, 0); // Esegui subito dopo il thread principale del DOMContentLoaded
+    // --- FINE LOGICA DI AVVIO ---
+    
 });

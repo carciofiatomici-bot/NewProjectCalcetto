@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Costanti per le collezioni
     let TEAMS_COLLECTION_PATH;
     let DRAFT_PLAYERS_COLLECTION_PATH;
+    // NUOVA COLLEZIONE: MARKET PLAYERS
+    let MARKET_PLAYERS_COLLECTION_PATH; 
     
     const getRandomInt = window.getRandomInt; // Usa il getter globale
 
@@ -113,6 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         TEAMS_COLLECTION_PATH = `artifacts/${appId}/public/data/teams`;
         DRAFT_PLAYERS_COLLECTION_PATH = `artifacts/${appId}/public/data/draftPlayers`;
+        // INIZIALIZZA IL PERCORSO MERCATO
+        MARKET_PLAYERS_COLLECTION_PATH = `artifacts/${appId}/public/data/marketPlayers`; 
 
         currentTeamId = event.detail.teamId;
         const mode = event.detail.mode;
@@ -192,7 +196,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     ${teamData.players.length === 0 
                         ? '<p class="text-gray-400">Nessun calciatore in rosa. Vai al Draft per acquistarne!</p>'
                         : teamData.players.map(player => {
-                            const refundCost = Math.floor(player.cost / 2);
+                            // Calcoliamo il rimborso solo per i giocatori che hanno avuto un costo > 0
+                            const refundCost = player.cost > 0 ? Math.floor(player.cost / 2) : 0;
 
                             return `
                                 <div class="flex justify-between items-center p-4 bg-gray-800 rounded-lg border border-green-700">
@@ -246,10 +251,42 @@ document.addEventListener('DOMContentLoaded', () => {
             displayMessage(msgContainerId, `Licenziamento di ${playerName} in corso...`, 'info');
 
             try {
-                const { doc, getDoc, updateDoc } = firestoreTools;
+                const { doc, getDoc, updateDoc, setDoc } = firestoreTools;
                 const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, currentTeamId);
-                const playerDraftDocRef = doc(db, DRAFT_PLAYERS_COLLECTION_PATH, playerId);
+                
+                // 1. Tenta di determinare l'origine del giocatore
+                const draftDocRef = doc(db, DRAFT_PLAYERS_COLLECTION_PATH, playerId);
+                const marketDocRef = doc(db, MARKET_PLAYERS_COLLECTION_PATH, playerId);
+                
+                const [draftDoc, marketDoc] = await Promise.all([
+                    getDoc(draftDocRef),
+                    getDoc(marketDocRef)
+                ]);
 
+                let docRefToUpdate;
+                let returnDestination;
+                
+                // Variabile per sapere se il documento esisteva
+                const docExists = draftDoc.exists() || marketDoc.exists();
+
+                if (draftDoc.exists()) {
+                    // Il giocatore era nel Draft
+                    docRefToUpdate = draftDocRef;
+                    returnDestination = "Draft";
+                } else {
+                    // Se non era nel Draft (sia che fosse nel Mercato, sia che fosse giocatore base), va nel Mercato.
+                    docRefToUpdate = marketDocRef;
+                    returnDestination = marketDoc.exists() ? "Mercato" : "Mercato (Nuovo Inserimento)";
+                }
+                
+                // --- TRANSAZIONE 1: Aggiorna il documento della Squadra ---
+                
+                // Recupera i dati completi del giocatore dalla rosa corrente
+                const playerInRosa = currentTeamData.players.find(p => p.id === playerId);
+                if (!playerInRosa) {
+                    throw new Error("Dati giocatore non trovati nella rosa!");
+                }
+                
                 const teamDoc = await getDoc(teamDocRef);
                 const teamData = teamDoc.data();
                 const currentPlayers = teamData.players || [];
@@ -269,18 +306,46 @@ document.addEventListener('DOMContentLoaded', () => {
                         panchina: updatedPanchina
                     }
                 });
-
-                await updateDoc(playerDraftDocRef, {
-                    isDrafted: false,
-                    teamId: null,
-                });
                 
-                displayMessage(msgContainerId, `Giocatore ${playerName} licenziato! Rimborsati ${refundCost} Crediti Seri.`, 'success');
+                // --- TRANSAZIONE 2: Aggiorna/Crea il documento del Giocatore ---
+
+                if (docExists) {
+                    // Caso A: Il documento esisteva (Draft o Market) -> usiamo updateDoc
+                    await updateDoc(docRefToUpdate, {
+                        isDrafted: false,
+                        teamId: null,
+                    });
+                } else {
+                    // Caso B: Il giocatore è di base e non esisteva in Market/Draft (docExists = false) -> usiamo setDoc per crearlo nel Mercato.
+                    
+                    // Creiamo una versione pulita del giocatore per l'inserimento nel Mercato
+                    // Se levelRange non è definito, usiamo il livello base come range.
+                    const finalLevelRange = playerInRosa.levelRange || [playerInRosa.level, playerInRosa.level];
+
+                    await setDoc(docRefToUpdate, {
+                        id: playerId,
+                        name: playerInRosa.name,
+                        role: playerInRosa.role,
+                        age: playerInRosa.age,
+                        cost: playerInRosa.cost,
+                        levelRange: finalLevelRange, 
+                        isDrafted: false,
+                        teamId: null,
+                        creationDate: new Date().toISOString()
+                    });
+                }
+                
+                // Ricarica le liste Admin (se l'Admin le sta guardando)
+                if (window.loadDraftPlayersAdmin) window.loadDraftPlayersAdmin();
+                if (window.loadMarketPlayersAdmin) window.loadMarketPlayersAdmin();
+
+
+                displayMessage(msgContainerId, `Giocatore ${playerName} licenziato! Rimborsati ${refundCost} CS. Tornato nel ${returnDestination}.`, 'success');
                 loadTeamDataAndRender('rosa');
 
             } catch (error) {
                 console.error("Errore durante il licenziamento:", error);
-                displayMessage(msgContainerId, `Errore nel licenziamento di ${playerName}. Riprova.`, 'error');
+                displayMessage(msgContainerId, `Errore nel licenziamento di ${playerName}. Messaggio: ${error.message}`, 'error');
                 target.disabled = false;
                 target.textContent = 'Licenzia (Errore)';
                 target.classList.remove('bg-orange-500');
@@ -293,213 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // -------------------------------------------------------------------
     // MODALITÀ GESTIONE FORMAZIONE (Drag & Drop Implementato)
-    // -------------------------------------------------------------------
-    
-    const createPlayerSlot = (role, index, player) => {
-        const slotId = `${role}-${index}`;
-        
-        // Usa i dati con forma se presenti
-        const playerWithForm = player;
-        
-        const playerName = playerWithForm ? `${playerWithForm.name}` : `Slot ${role}`;
-        const playerRole = playerWithForm ? playerWithForm.role : role; 
-        const levelText = playerWithForm ? playerWithForm.currentLevel : ''; 
-        const baseLevel = playerWithForm ? playerWithForm.level : '';
-        const bgColor = playerWithForm ? 'bg-yellow-500' : 'bg-gray-700'; 
-        const textColor = playerWithForm ? 'text-gray-900' : 'text-gray-400';
-        
-        // AGGIUNTO ondragend qui
-        const draggableAttr = playerWithForm ? `draggable="true" data-id="${playerWithForm.id}" data-role="${playerWithForm.role}" data-cost="${playerWithForm.cost}" ondragend="window.handleDragEnd(event)"` : '';
-        
-        let warningHtml = '';
-        let tooltipText = '';
-
-        if (playerWithForm && role !== 'B' && playerWithForm.role !== role) {
-            tooltipText = `ATTENZIONE: ${playerWithForm.name} è un ${playerWithForm.role} ma gioca come ${role}. L'impatto in partita sarà minore.`;
-            warningHtml = `
-                <span class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 cursor-help" 
-                      title="${tooltipText}">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-600 bg-white rounded-full shadow-lg" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                    </svg>
-                </span>
-            `;
-        }
-        
-        // NUOVO: Icona forma
-        // Assicurati di includere Font Awesome nel tuo HTML per far funzionare le icone
-        const formIconHtml = playerWithForm ? 
-            `<i class="${playerWithForm.formIcon} mr-1 text-base"></i>` : 
-            '';
-        
-        // NUOVO: Colore del modificatore
-        const modColor = playerWithForm && playerWithForm.formModifier > 0 ? 'text-green-500' : (playerWithForm && playerWithForm.formModifier < 0 ? 'text-red-500' : 'text-gray-400');
-        const modText = playerWithForm && playerWithForm.formModifier !== 0 ? `(${playerWithForm.formModifier > 0 ? '+' : ''}${playerWithForm.formModifier})` : '(0)';
-
-        // LOGICA MIGLIORATA PER IL CONTENUTO DEL BOX:
-        const playerContent = playerWithForm ? 
-            `<div class="jersey-inner w-full h-full flex flex-col justify-between items-center py-1 font-extrabold select-none">
-                <span class="text-xs font-normal text-gray-700">BASE: ${baseLevel}</span>
-                <div class="flex items-center text-xl mt-1">
-                    ${formIconHtml} 
-                    <span class="text-3xl font-extrabold">${levelText}</span>
-                </div>
-                <span class="text-xs font-semibold ${modColor} mt-auto">${modText}</span>
-            </div>`
-            : 
-            `<span class="font-semibold text-xs select-none">${role}</span>`;
-
-        // Modifica: Aumento del padding interno e del box-sizing
-        return `
-            <div data-role="${role}" id="${slotId}" class="slot-target w-full text-center rounded-lg shadow-inner-dark transition duration-150 cursor-pointer relative
-                        ${bgColor} ${textColor}
-                        ${playerWithForm ? 'player-card' : 'empty-slot'} z-10 p-1" 
-                 ondragover="event.preventDefault();"
-                 ondrop="window.handleDrop(event, '${role}')"
-                 ${draggableAttr}
-                 ondragstart="window.handleDragStart(event)"
-                 title="${playerWithForm ? playerName : ''}">
-                
-                ${playerContent}
-                ${warningHtml}
-            </div>
-        `;
-    };
-
-    /**
-     * Rimuove il giocatore dalla sua posizione corrente (titolari o panchina).
-     * @param {string} playerId - ID del giocatore da rimuovere.
-     */
-    const removePlayerFromPosition = (playerId) => {
-        // Rimuove dai titolari
-        const initialTitolariLength = currentTeamData.formation.titolari.length;
-        currentTeamData.formation.titolari = currentTeamData.formation.titolari.filter(p => p.id !== playerId);
-        const removedFromTitolari = initialTitolariLength !== currentTeamData.formation.titolari.length;
-        
-        // Rimuove dalla panchina
-        const initialPanchinaLength = currentTeamData.formation.panchina.length;
-        currentTeamData.formation.panchina = currentTeamData.formation.panchina.filter(p => p.id !== playerId);
-        const removedFromPanchina = initialPanchinaLength !== currentTeamData.formation.panchina.length;
-        
-        return removedFromTitolari || removedFromPanchina;
-    };
-
-
-    const renderFieldSlots = (teamData) => {
-        const formationData = teamData.formation;
-        const currentModule = MODULI[formationData.modulo];
-        const titolariSlots = document.getElementById('titolari-slots');
-        const panchinaSlots = document.getElementById('panchina-slots');
-        const fullSquadList = document.getElementById('full-squad-list');
-
-        if (!titolariSlots || !panchinaSlots || !fullSquadList || !currentModule) return;
-        
-        const allPlayers = teamData.players;
-        
-        // Calcola i giocatori in campo/panchina
-        const usedIds = [...formationData.titolari.map(p => p.id), ...formationData.panchina.map(p => p.id)];
-        
-        // Giocatori disponibili (nella rosa ma non in formazione)
-        const availablePlayers = allPlayers.filter(p => !usedIds.includes(p.id));
-        
-        // Copia dei titolari per il rendering a slot (perché la lista è piatta)
-        let titolariToRender = [...formationData.titolari];
-        
-        titolariSlots.innerHTML = '';
-        panchinaSlots.innerHTML = '';
-        fullSquadList.innerHTML = '';
-        
-        // CORREZIONE: Dichiarazione di fieldHtml
-        let fieldHtml = ''; 
-        
-        // Funzione helper per trovare e rimuovere un giocatore dal pool dei titolari
-        const getPlayerForRole = (role) => {
-            const index = titolariToRender.findIndex(p => p.role === role);
-            if (index !== -1) {
-                return titolariToRender.splice(index, 1)[0];
-            }
-            // Se non trova il ruolo primario, cerca il primo giocatore disponibile (fuori ruolo)
-            const firstAvailableIndex = titolariToRender.findIndex(p => p.role !== 'P' && p.role !== 'B'); // Evita portieri non assegnati
-             if (role !== 'P' && firstAvailableIndex !== -1) {
-                return titolariToRender.splice(firstAvailableIndex, 1)[0];
-             }
-            return null;
-        };
-
-        // Portiere (P)
-        let portiere = null;
-        const portiereIndex = titolariToRender.findIndex(p => p.role === 'P');
-        if (portiereIndex !== -1) {
-             portiere = titolariToRender.splice(portiereIndex, 1)[0];
-        }
-
-        fieldHtml += `
-            <div class="field-position-P w-full flex justify-center">
-                <div class="jersey-container w-20 h-20 text-center"> <!-- Dimensione fissa 80px -->
-                    ${createPlayerSlot('P', 0, portiere)}
-                </div>
-            </div>
-        `;
-
-        // Linee (D, C, A)
-        const rolePositionsY = { 'D': 'field-position-D', 'C': 'field-position-C', 'A': 'field-position-A' };
-        
-        ROLES.filter(r => r !== 'P').forEach(role => {
-            const slotsCount = currentModule[role];
-            if (slotsCount === 0) return;
-
-            fieldHtml += `
-                <div class="${rolePositionsY[role]} w-full flex justify-center items-center">
-                    <h5 class="absolute left-2 text-white font-bold text-sm z-0">${role} (${slotsCount})</h5>
-                    
-                    <div class="flex justify-around w-full px-12">
-                        ${Array(slotsCount).fill().map((_, index) => {
-                            const player = getPlayerForRole(role); 
-                            return `
-                                <div class="jersey-container w-20 h-20"> <!-- Dimensione fissa 80px -->
-                                    ${createPlayerSlot(role, index, player)}
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        });
-        
-        titolariSlots.innerHTML = fieldHtml; 
-        
-        // Panchina (B)
-        panchinaSlots.innerHTML = teamData.formation.panchina.map((player, index) => {
-            return `<div class="jersey-container w-20 h-20">${createPlayerSlot('B', index, player)}</div>`; // Dimensione fissa 80px
-        }).join('');
-        
-        panchinaSlots.innerHTML += Array(3 - teamData.formation.panchina.length).fill().map((_, index) => {
-            return `<div class="jersey-container w-20 h-20">${createPlayerSlot('B', teamData.formation.panchina.length + index, null)}</div>`; // Dimensione fissa 80px
-        }).join('');
-
-        // Rosa Completa
-        if (availablePlayers.length === 0) {
-             fullSquadList.innerHTML = '<p class="text-gray-400">Nessun giocatore disponibile (tutti in campo o in panchina).</p>';
-        } else {
-            fullSquadList.innerHTML = availablePlayers.map(player => {
-                // Recupera i dati di forma corretti dal Map
-                const playerWithForm = generatedPlayerForms.get(player.id) || player; 
-                
-                return `
-                    <div draggable="true" data-id="${player.id}" data-role="${player.role}" data-cost="${player.cost}"
-                         class="player-card p-2 bg-gray-600 text-white rounded-lg shadow cursor-grab hover:bg-gray-500 transition duration-100 z-10"
-                         ondragstart="window.handleDragStart(event)"
-                         ondragend="window.handleDragEnd(event)">
-                        ${player.name} (${player.role}) (Liv: ${player.level})
-                        <!-- Visualizzazione Form in Rosa Libera -->
-                        <span class="float-right text-xs font-semibold ${playerWithForm.formModifier > 0 ? 'text-green-400' : (playerWithForm.formModifier < 0 ? 'text-red-400' : 'text-gray-400')}">
-                            ${playerWithForm.formModifier > 0 ? '+' : ''}${playerWithForm.formModifier}
-                        </span>
-                    </div>
-                `;
-            }).join('');
-        }
-    };
+    // ... (Logica di formazione invariata per brevità) ...
     
     const renderFormazioneManagement = (teamData) => {
         squadraMainTitle.textContent = "Gestione Formazione";
@@ -513,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     height: 700px; 
                     background-image: 
                         linear-gradient(to right, #14532d, #052e16),
-                        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="%2314532d" /><rect x="0" y="0" width="100" height="20" fill="%23052e16" /><rect x="0" y="40" width="100" height="20" fill="%23052e16" /><rect x="0" y="80" width="100" height="20" fill="%23052e16" /></svg>');
+                        url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="0" y="0" width="100" height="100" fill="%2314532d" /><rect x="0" y="40" width="100" height="20" fill="%23052e16" /><rect x="0" y="80" width="100" height="20" fill="%23052e16" /></svg>');
                     background-size: cover;
                     background-repeat: no-repeat;
                     position: relative;
@@ -635,7 +494,197 @@ document.addEventListener('DOMContentLoaded', () => {
         renderFieldSlots(teamData); 
     };
 
+    const createPlayerSlot = (role, index, player) => {
+        // ... (Logica createPlayerSlot non è stata modificata e funziona)
+        const slotId = `${role}-${index}`;
+        
+        // Usa i dati con forma se presenti
+        const playerWithForm = player;
+        
+        const playerName = playerWithForm ? `${playerWithForm.name}` : `Slot ${role}`;
+        const playerRole = playerWithForm ? playerWithForm.role : role; 
+        const levelText = playerWithForm ? playerWithForm.currentLevel : ''; 
+        const baseLevel = playerWithForm ? playerWithForm.level : '';
+        const bgColor = playerWithForm ? 'bg-yellow-500' : 'bg-gray-700'; 
+        const textColor = playerWithForm ? 'text-gray-900' : 'text-gray-400';
+        
+        // AGGIUNTO ondragend qui
+        const draggableAttr = playerWithForm ? `draggable="true" data-id="${playerWithForm.id}" data-role="${playerWithForm.role}" data-cost="${playerWithForm.cost}" ondragend="window.handleDragEnd(event)"` : '';
+        
+        let warningHtml = '';
+        let tooltipText = '';
+
+        if (playerWithForm && role !== 'B' && playerWithForm.role !== role) {
+            tooltipText = `ATTENZIONE: ${playerWithForm.name} è un ${playerWithForm.role} ma gioca come ${role}. L'impatto in partita sarà minore.`;
+            warningHtml = `
+                <span class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2 cursor-help" 
+                      title="${tooltipText}">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-red-600 bg-white rounded-full shadow-lg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </span>
+            `;
+        }
+        
+        // NUOVO: Icona forma
+        // Assicurati di includere Font Awesome nel tuo HTML per far funzionare le icone
+        const formIconHtml = playerWithForm ? 
+            `<i class="${playerWithForm.formIcon} mr-1 text-base"></i>` : 
+            '';
+        
+        // NUOVO: Colore del modificatore
+        const modColor = playerWithForm && playerWithForm.formModifier > 0 ? 'text-green-500' : (playerWithForm && playerWithForm.formModifier < 0 ? 'text-red-500' : 'text-gray-400');
+        const modText = playerWithForm && playerWithForm.formModifier !== 0 ? `(${playerWithForm.formModifier > 0 ? '+' : ''}${playerWithForm.formModifier})` : '(0)';
+
+        // LOGICA MIGLIORATA PER IL CONTENUTO DEL BOX:
+        const playerContent = playerWithForm ? 
+            `<div class="jersey-inner w-full h-full flex flex-col justify-between items-center py-1 font-extrabold select-none">
+                <span class="text-xs font-normal text-gray-700">BASE: ${baseLevel}</span>
+                <div class="flex items-center text-xl mt-1">
+                    ${formIconHtml} 
+                    <span class="text-3xl font-extrabold">${levelText}</span>
+                </div>
+                <span class="text-xs font-semibold ${modColor} mt-auto">${modText}</span>
+            </div>`
+            : 
+            `<span class="font-semibold text-xs select-none">${role}</span>`;
+
+        // Modifica: Aumento del padding interno e del box-sizing
+        return `
+            <div data-role="${role}" id="${slotId}" class="slot-target w-full text-center rounded-lg shadow-inner-dark transition duration-150 cursor-pointer relative
+                        ${bgColor} ${textColor}
+                        ${playerWithForm ? 'player-card' : 'empty-slot'} z-10 p-1" 
+                 ondragover="event.preventDefault();"
+                 ondrop="window.handleDrop(event, '${role}')"
+                 ${draggableAttr}
+                 ondragstart="window.handleDragStart(event)"
+                 title="${playerWithForm ? playerName : ''}">
+                
+                ${playerContent}
+                ${warningHtml}
+            </div>
+        `;
+    };
+
+    const renderFieldSlots = (teamData) => {
+        // ... (Logica renderFieldSlots non è stata modificata e funziona)
+        const formationData = teamData.formation;
+        const currentModule = MODULI[formationData.modulo];
+        const titolariSlots = document.getElementById('titolari-slots');
+        const panchinaSlots = document.getElementById('panchina-slots');
+        const fullSquadList = document.getElementById('full-squad-list');
+
+        if (!titolariSlots || !panchinaSlots || !fullSquadList || !currentModule) return;
+        
+        const allPlayers = teamData.players;
+        
+        // Calcola i giocatori in campo/panchina
+        const usedIds = [...formationData.titolari.map(p => p.id), ...formationData.panchina.map(p => p.id)];
+        
+        // Giocatori disponibili (nella rosa ma non in formazione)
+        const availablePlayers = allPlayers.filter(p => !usedIds.includes(p.id));
+        
+        // Copia dei titolari per il rendering a slot (perché la lista è piatta)
+        let titolariToRender = [...formationData.titolari];
+        
+        titolariSlots.innerHTML = '';
+        panchinaSlots.innerHTML = '';
+        fullSquadList.innerHTML = '';
+        
+        // CORREZIONE: Dichiarazione di fieldHtml
+        let fieldHtml = ''; 
+        
+        // Funzione helper per trovare e rimuovere un giocatore dal pool dei titolari
+        const getPlayerForRole = (role) => {
+            const index = titolariToRender.findIndex(p => p.role === role);
+            if (index !== -1) {
+                return titolariToRender.splice(index, 1)[0];
+            }
+            // Se non trova il ruolo primario, cerca il primo giocatore disponibile (fuori ruolo)
+            const firstAvailableIndex = titolariToRender.findIndex(p => p.role !== 'P' && p.role !== 'B'); // Evita portieri non assegnati
+             if (role !== 'P' && firstAvailableIndex !== -1) {
+                return titolariToRender.splice(firstAvailableIndex, 1)[0];
+             }
+            return null;
+        };
+
+        // Portiere (P)
+        let portiere = null;
+        const portiereIndex = titolariToRender.findIndex(p => p.role === 'P');
+        if (portiereIndex !== -1) {
+             portiere = titolariToRender.splice(portiereIndex, 1)[0];
+        }
+
+        fieldHtml += `
+            <div class="field-position-P w-full flex justify-center">
+                <div class="jersey-container w-20 h-20 text-center"> <!-- Dimensione fissa 80px -->
+                    ${createPlayerSlot('P', 0, portiere)}
+                </div>
+            </div>
+        `;
+
+        // Linee (D, C, A)
+        const rolePositionsY = { 'D': 'field-position-D', 'C': 'field-position-C', 'A': 'field-position-A' };
+        
+        ROLES.filter(r => r !== 'P').forEach(role => {
+            const slotsCount = currentModule[role];
+            if (slotsCount === 0) return;
+
+            fieldHtml += `
+                <div class="${rolePositionsY[role]} w-full flex justify-center items-center">
+                    <h5 class="absolute left-2 text-white font-bold text-sm z-0">${role} (${slotsCount})</h5>
+                    
+                    <div class="flex justify-around w-full px-12">
+                        ${Array(slotsCount).fill().map((_, index) => {
+                            const player = getPlayerForRole(role); 
+                            return `
+                                <div class="jersey-container w-20 h-20"> <!-- Dimensione fissa 80px -->
+                                    ${createPlayerSlot(role, index, player)}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        titolariSlots.innerHTML = fieldHtml; 
+        
+        // Panchina (B)
+        panchinaSlots.innerHTML = teamData.formation.panchina.map((player, index) => {
+            return `<div class="jersey-container w-20 h-20">${createPlayerSlot('B', index, player)}</div>`; // Dimensione fissa 80px
+        }).join('');
+        
+        panchinaSlots.innerHTML += Array(3 - teamData.formation.panchina.length).fill().map((_, index) => {
+            return `<div class="jersey-container w-20 h-20">${createPlayerSlot('B', teamData.formation.panchina.length + index, null)}</div>`; // Dimensione fissa 80px
+        }).join('');
+
+        // Rosa Completa
+        if (availablePlayers.length === 0) {
+             fullSquadList.innerHTML = '<p class="text-gray-400">Nessun giocatore disponibile (tutti in campo o in panchina).</p>';
+        } else {
+            fullSquadList.innerHTML = availablePlayers.map(player => {
+                // Recupera i dati di forma corretti dal Map
+                const playerWithForm = generatedPlayerForms.get(player.id) || player; 
+                
+                return `
+                    <div draggable="true" data-id="${player.id}" data-role="${player.role}" data-cost="${player.cost}"
+                         class="player-card p-2 bg-gray-600 text-white rounded-lg shadow cursor-grab hover:bg-gray-500 transition duration-100 z-10"
+                         ondragstart="window.handleDragStart(event)"
+                         ondragend="window.handleDragEnd(event)">
+                        ${player.name} (${player.role}) (Liv: ${player.level})
+                        <!-- Visualizzazione Form in Rosa Libera -->
+                        <span class="float-right text-xs font-semibold ${playerWithForm.formModifier > 0 ? 'text-green-400' : (playerWithForm.formModifier < 0 ? 'text-red-400' : 'text-gray-400')}">
+                            ${playerWithForm.formModifier > 0 ? '+' : ''}${playerWithForm.formModifier}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+    };
+
     window.handleDragStart = (e) => {
+        // ... (Logica Drag & Drop non è stata modificata e funziona)
         const dragTarget = e.target.closest('.slot-target') || e.target.closest('.player-card');
         if (!dragTarget || !dragTarget.dataset.id) {
              e.preventDefault();
@@ -662,6 +711,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     window.handleDrop = (e, targetRole) => {
+        // ... (Logica Drop non è stata modificata e funziona)
         e.preventDefault();
         
         // 1. RECUPERO L'ID DEL GIOCATORE TRASCINATO
@@ -743,6 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const handleSaveFormation = async () => {
+        // ... (Logica Save Formation non è stata modificata e funziona)
         const saveButton = document.getElementById('btn-save-formation');
         saveButton.textContent = 'Salvataggio...';
         saveButton.disabled = true;
@@ -810,12 +861,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+
     // GESTIONE NAVIGAZIONE
     squadraBackButton.addEventListener('click', () => {
         // Al ritorno alla Dashboard Utente, ricarica la UI per aggiornare le statistiche
         if (window.showScreen && appContent) {
             window.showScreen(appContent);
-            // La dashboard si ricarica automaticamente in interfaccia.js
+            document.dispatchEvent(new CustomEvent('dashboardNeedsUpdate'));
         }
     });
 

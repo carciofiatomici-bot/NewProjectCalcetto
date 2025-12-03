@@ -110,7 +110,7 @@
 
 
             <!-- Pulsanti di Navigazione Squadra (Gestione interna) -->
-            <div class="mt-4 grid grid-cols-3 gap-4">
+            <div class="mt-4 grid grid-cols-4 gap-4"> <!-- Modificato a grid-cols-4 -->
                 <button id="btn-gestione-rosa"
                         class="bg-green-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-green-500 transition duration-150 transform hover:scale-[1.01]">
                     Gestione Rosa
@@ -122,6 +122,11 @@
                 <button id="btn-draft-utente"
                         class="bg-yellow-600 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-500 transition duration-150 transform hover:scale-[1.01]">
                     Draft
+                </button>
+                <!-- NUOVO BOTTONE MERCATO -->
+                 <button id="btn-mercato-utente"
+                        class="bg-blue-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-blue-500 transition duration-150 transform hover:scale-[1.01]">
+                    Mercato
                 </button>
             </div>
 
@@ -135,12 +140,12 @@
             </button>
         </div>
         
-        <!-- 4. CONTENUTO AREA AMMINISTRATORE - NASCOSTO -->
+        <!-- 4. CONTENUTO AREA AMMINISTRATORE - Dashboard Principale -->
         <div id="admin-content" class="football-box w-full max-w-3xl transition duration-500 hidden-on-load">
             <h2 class="text-4xl font-extrabold text-red-500 text-center mb-4 border-b-4 border-red-700 pb-2">Area Amministrazione (Panchina Lunga)</h2>
-            <p id="admin-welcome-message" class="text-center text-xl text-gray-300 mb-6">Pannello di Controllo Squadre Registrate</p>
+            <p id="admin-welcome-message" class="text-center text-xl text-gray-300 mb-6">Pannello di Controllo</p>
             
-            <!-- Contenitore per le squadre -->
+            <!-- Contenitore per i pulsanti principali e liste squadre -->
             <div id="admin-dashboard-container" class="mt-8 p-6 bg-gray-700 rounded-lg border-2 border-red-500 shadow-xl">
                 <!-- Il layout è generato da admin.js -->
                 <p class="text-gray-400 text-center">Inizializzazione...</p>
@@ -152,7 +157,7 @@
             </button>
         </div>
         
-        <!-- 5. CONTENUTO AREA DRAFT (Admin/Utente) - NASCOSTO -->
+        <!-- 5. CONTENUTO AREA DRAFT (Utente) - NASCOSTO -->
         <div id="draft-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
              <h2 class="text-4xl font-extrabold text-yellow-400 text-center mb-4 border-b-4 border-yellow-700 pb-2">Gestione Draft Calciatori</h2>
              <div id="draft-tools-container" class="mt-6">
@@ -218,6 +223,48 @@
             </button>
         </div>
 
+        <!-- 10. CONTENUTO AREA MERCATO (Acquisti Liberi) - NASCOSTO -->
+        <div id="mercato-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-blue-400 text-center mb-4 border-b-4 border-blue-700 pb-2">Mercato Fuori Lista</h2>
+             <div id="mercato-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Contenuto Mercato in caricamento...</p>
+             </div>
+             <button id="mercato-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna alla Dashboard
+            </button>
+        </div>
+        
+        <!-- 11. CONTENUTO: GESTIONE GIOCATORI ADMIN -->
+        <div id="player-management-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-yellow-400 text-center mb-4 border-b-4 border-yellow-700 pb-2">Gestione Calciatori (Creazione e Liste)</h2>
+             
+             <!-- Il contenuto è iniettato da admin.js -->
+             <div id="player-management-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Caricamento strumenti...</p>
+             </div>
+
+             <button id="player-management-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna alla Dashboard Admin
+            </button>
+        </div>
+
+        <!-- 12. NUOVO CONTENUTO: GESTIONE SQUADRE ADMIN -->
+        <div id="team-management-content" class="football-box w-full max-w-4xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-blue-500 text-center mb-4 border-b-4 border-blue-700 pb-2">Gestione Squadre Registrate</h2>
+             
+             <!-- Il contenuto è iniettato da admin.js -->
+             <div id="team-management-tools-container" class="mt-6">
+                <p class="text-center text-gray-400">Caricamento strumenti...</p>
+             </div>
+
+             <button id="team-management-back-button"
+                    class="mt-6 w-full bg-gray-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-gray-500 transition duration-150 transform hover:scale-[1.02]">
+                Torna alla Dashboard Admin
+            </button>
+        </div>
+
 
     </main>
 
@@ -272,7 +319,10 @@
                 document.getElementById('leaderboard-content'),
                 document.getElementById('schedule-content'),
                 document.getElementById('championship-content'),
-                document.getElementById('squadra-content')
+                document.getElementById('squadra-content'),
+                document.getElementById('mercato-content'),
+                document.getElementById('player-management-content'), // Gestione Giocatori Admin
+                document.getElementById('team-management-content') // Gestione Squadre Admin
             ];
             boxes.forEach(box => {
                 if (box) {
@@ -316,5 +366,6 @@
     <script src="draft.js"></script> 
     <script src="campionato.js"></script> 
     <script src="gestionesquadre.js"></script>
+    <script src="mercato.js"></script> 
 </body>
 </html>

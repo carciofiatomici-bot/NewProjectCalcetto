@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return `
                         <div class="flex flex-col sm:flex-row justify-between items-center p-3 bg-gray-700 rounded-lg border border-blue-500">
                             <div>
-                                <p class="text-white font-semibold">${player.name} (${player.role}, ${player.age} anni)</p>
+                                <p class="text-white font-semibold">${player.name} (${player.role}, ${player.age} anni) <span class="text-red-300">(${player.type || 'N/A'})</span></p>
                                 <p class="text-sm text-blue-300">Livello: ${player.levelRange[0]}-${player.levelRange[1]}</p>
                             </div>
                             <button data-player-id="${player.id}" 
@@ -164,6 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     data-player-name="${player.name}"
                                     data-player-role="${player.role}"
                                     data-player-age="${player.age}"
+                                    data-player-type="${player.type}"
                                     data-action="buy-market"
                                     ${isAffordable ? '' : 'disabled'}
                                     class="text-sm px-4 py-2 rounded-lg font-bold transition duration-150 mt-2 sm:mt-0 ${buttonClass}">
@@ -199,6 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const playerName = target.dataset.playerName;
             const playerRole = target.dataset.playerRole;
             const playerAge = parseInt(target.dataset.playerAge);
+            const playerType = target.dataset.playerType; // NUOVO: Tipo
 
             displayMessage(`Acquisto di ${playerName} in corso dal Mercato...`, 'info');
             target.disabled = true;
@@ -235,6 +237,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     age: playerAge,
                     cost: playerCost,
                     level: finalLevel,
+                    type: playerType, // NUOVO: Tipo
+                    isCaptain: false
                 };
 
                 // Aggiorna Firestore: Squadra

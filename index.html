@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Collega il foglio di stile esterno -->
     <link rel="stylesheet" href="style.css">
+    <!-- CARICA FONT AWESOME (per icone tipologie) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
 
@@ -90,6 +92,13 @@
                 </div>
             </div>
             
+            <!-- AGGIUNTO: Allenatore -->
+            <div class="p-3 bg-gray-800 rounded-lg border-2 border-orange-500 text-center shadow-lg mb-4">
+                 <p class="text-sm text-gray-400 font-semibold">Allenatore:</p>
+                 <p id="stat-coach-name" class="text-xl font-extrabold text-orange-400 mt-1">N/A</p>
+                 <p class="text-xs text-gray-500">Livello: <span id="stat-coach-level">1</span></p>
+            </div>
+            
             <!-- NUOVO: PREVIEW PROSSIMA PARTITA -->
             <div id="next-match-preview" class="p-3 bg-gray-800 rounded-lg border-2 border-orange-500 text-center shadow-lg mb-4">
                 <p class="text-gray-400 font-semibold">Caricamento prossima sfida...</p>
@@ -134,10 +143,17 @@
                 <p class="text-white font-semibold">Sei in Area Utente standard. ID Firestore: <span id="team-firestore-id">N/A</span></p>
             </div>
             
-            <button id="user-logout-button"
-                    class="mt-6 w-full bg-yellow-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-400 transition duration-150 transform hover:scale-[1.02]">
-                Logout
-            </button>
+            <div class="grid grid-cols-2 gap-4 mt-6">
+                <button id="user-logout-button"
+                        class="w-full bg-yellow-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-yellow-400 transition duration-150 transform hover:scale-[1.02]">
+                    Logout
+                </button>
+                <!-- NUOVO PULSANTE ELIMINA SQUADRA -->
+                <button id="btn-delete-team"
+                        class="w-full bg-red-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-500 transition duration-150 transform hover:scale-[1.02]">
+                    Elimina Squadra
+                </button>
+            </div>
         </div>
         
         <!-- 4. CONTENUTO AREA AMMINISTRATORE - Dashboard Principale -->
@@ -264,6 +280,66 @@
                 Torna alla Dashboard Admin
             </button>
         </div>
+        
+        <!-- 13. NUOVO CONTENUTO: SELEZIONE ALLENATORE -->
+        <div id="coach-selection-box" class="football-box w-full max-w-xl transition duration-500 hidden-on-load">
+            <h2 class="text-4xl font-extrabold text-red-500 text-center mb-4 border-b-4 border-red-700 pb-2">Un Manager per la Tua Squadra</h2>
+            <p class="text-center text-lg text-gray-300 mb-6">Inserisci il nome dell'allenatore che guiderà la squadra. Partirà da Livello 1 e potrà crescere.</p>
+            
+            <input type="text" id="coach-name-input" placeholder="Nome Allenatore (es. Carlo Ancelotti)"
+                   class="w-full p-3 border border-red-600 rounded-lg focus:ring-red-400 focus:border-red-400 bg-gray-700 text-white mb-4 shadow-inner-dark">
+            
+            <button id="btn-confirm-coach"
+                    class="w-full bg-red-500 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-400 transition duration-150 transform hover:scale-[1.02]">
+                Conferma e Scegli il Capitano
+            </button>
+            
+            <p id="coach-selection-message" class="text-center mt-3 text-red-400"></p>
+        </div>
+        
+        <!-- 14. NUOVO CONTENUTO: SELEZIONE CAPITANO -->
+        <div id="captain-selection-box" class="football-box w-full max-w-3xl transition duration-500 hidden-on-load">
+             <h2 class="text-4xl font-extrabold text-orange-400 text-center mb-4 border-b-4 border-orange-700 pb-2">Seleziona il tuo Capitano!</h2>
+             <p id="captain-message" class="text-center text-lg text-gray-300 mb-6">Scegli il giocatore che guiderà la tua squadra. Sarà il tuo sesto giocatore in rosa.</p>
+             
+             <div id="captain-candidates-container" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                <p class="text-center text-gray-400 col-span-4">Caricamento candidati...</p>
+             </div>
+             
+             <p id="captain-selection-error" class="text-center mt-6 text-red-400"></p>
+             
+             <button id="btn-confirm-captain"
+                    class="mt-6 w-full bg-green-500 text-gray-900 font-extrabold py-3 rounded-lg shadow-xl hover:bg-green-400 transition duration-150 transform hover:scale-[1.02]" disabled>
+                Conferma Capitano e Vai alla Dashboard
+            </button>
+        </div>
+        
+        
+        <!-- 15. MODALE DI CONFERMA ELIMINAZIONE SQUADRA (Globale) -->
+        <div id="delete-team-modal" class="fixed inset-0 bg-black bg-opacity-75 items-center justify-center p-4 z-50 hidden">
+            <div class="football-box w-full max-w-sm">
+                <h3 class="text-3xl font-bold text-red-400 mb-4 border-b border-red-600 pb-2 text-center">ELIMINA SQUADRA</h3>
+                <p class="text-lg text-gray-300 mb-4 text-center">Sei sicuro di voler eliminare definitivamente <span id="team-name-to-delete" class="font-extrabold text-yellow-400">[Nome Squadra]</span>?</p>
+                
+                <p class="text-red-400 font-bold mb-4 text-center">Questa azione è irreversibile.</p>
+
+                <label for="delete-confirmation-input" class="block text-gray-300 font-semibold mb-2">Digita "ELIMINA" per confermare:</label>
+                <input type="text" id="delete-confirmation-input" 
+                       class="w-full p-3 mb-4 rounded-lg bg-gray-700 border border-red-600 text-white uppercase text-center font-extrabold focus:ring-red-400">
+
+                <div class="flex justify-between space-x-4">
+                    <button id="btn-cancel-delete"
+                            class="w-1/2 bg-gray-500 text-white font-semibold py-3 rounded-lg shadow-md hover:bg-gray-400 transition duration-150">
+                        Annulla
+                    </button>
+                    <button id="btn-confirm-delete-final"
+                            class="w-1/2 bg-red-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-500 transition duration-150" disabled>
+                        Conferma Eliminazione
+                    </button>
+                </div>
+                <p id="delete-message" class="text-center mt-3 text-red-400"></p>
+            </div>
+        </div>
 
 
     </main>
@@ -277,7 +353,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // *** IMPORTAZIONE CRITICA: AGGIUNTO updateDoc ***
+        // *** IMPORTAZIONE CRITICA: AGGIUNTO updateDoc e deleteDoc ***
         import { getFirestore, doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; 
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -305,7 +381,7 @@
         window.app = initializeApp(window.firebaseConfig);
         window.db = getFirestore(window.app);
         window.auth = getAuth(window.app);
-        // *** ESPOSIZIONE CRITICA: AGGIUNTO updateDoc alla lista ***
+        // *** ESPOSIZIONE CRITICA: AGGIUNTO deleteDoc alla lista ***
         window.firestoreTools = { doc, getDoc, setDoc, addDoc, collection, query, getDocs, deleteDoc, updateDoc, appId }; 
         
         // Funzione globale per cambiare schermata
@@ -322,7 +398,9 @@
                 document.getElementById('squadra-content'),
                 document.getElementById('mercato-content'),
                 document.getElementById('player-management-content'), // Gestione Giocatori Admin
-                document.getElementById('team-management-content') // Gestione Squadre Admin
+                document.getElementById('team-management-content'), // Gestione Squadre Admin
+                document.getElementById('coach-selection-box'), // Selezione Allenatore (NUOVO)
+                document.getElementById('captain-selection-box') // Selezione Capitano
             ];
             boxes.forEach(box => {
                 if (box) {

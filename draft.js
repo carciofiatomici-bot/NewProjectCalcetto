@@ -101,6 +101,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
         const configDoc = await getDoc(configDocRef);
         let draftOpen = configDoc.exists() ? (configDoc.data().isDraftOpen || false) : false;
+        
+        // Costanti Tipologie
+        const types = ['Potenza', 'Tecnica', 'Velocita'];
 
 
         // Interfaccia Creazione Calciatore con il pulsante Toggle
@@ -123,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <!-- SEZIONE 2: CREAZIONE CALCIATORE -->
                 <h3 class="text-xl font-bold text-yellow-400 border-b border-gray-700 pb-2 pt-4">Crea Nuovo Calciatore</h3>
                 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Nome -->
                     <div class="flex flex-col">
                         <label class="text-gray-300 mb-1" for="player-name">Nome</label>
@@ -141,6 +144,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             <option value="D">D (Difensore)</option>
                             <option value="C">C (Centrocampista)</option>
                             <option value="A">A (Attaccante)</option>
+                        </select>
+                    </div>
+
+                    <!-- Tipologia (Type) -->
+                    <div class="flex flex-col">
+                        <label class="text-gray-300 mb-1" for="player-type">Tipologia (Type)</label>
+                        <select id="player-type" 
+                                class="p-2 rounded-lg bg-gray-700 border border-yellow-600 text-white focus:ring-yellow-400">
+                            <option value="">Seleziona Tipo</option>
+                            ${types.map(t => `<option value="${t}">${t}</option>`).join('')}
                         </select>
                     </div>
                     
@@ -234,12 +247,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const statusClass = player.isDrafted ? 'bg-red-700' : 'bg-green-700';
                 const teamName = player.teamId ? player.teamId : '';
                 const statusText = player.isDrafted ? `Venduto a: ${teamName}` : 'Disponibile';
+                const playerType = player.type || 'N/A'; // Assicurati che il tipo esista
 
                 playersHtml += `
                     <div class="player-item flex flex-col sm:flex-row justify-between items-center p-3 bg-gray-700 rounded-lg border border-gray-600 hover:border-yellow-500 transition duration-150">
                         <!-- Dati Giocatore -->
                         <div class="w-full sm:w-auto mb-2 sm:mb-0">
-                            <p class="text-lg font-bold text-white">${player.name} <span class="text-yellow-400">(${player.role})</span></p>
+                            <p class="text-lg font-bold text-white">${player.name} <span class="text-yellow-400">(${player.role} - ${playerType})</span></p>
                             <p class="text-sm text-gray-400">Età: ${player.age} | Livello: ${player.levelRange[0]}-${player.levelRange[1]} | Costo: ${player.cost} CS</p>
                         </div>
                         
@@ -338,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusBox.classList.remove(newState ? 'border-red-500' : 'border-green-500', newState ? 'bg-red-900' : 'bg-green-900');
             statusBox.classList.add(newState ? 'border-green-500' : 'border-red-500', newState ? 'bg-green-900' : 'bg-red-900');
             target.classList.remove(newState ? 'bg-green-600' : 'bg-red-600', newState ? 'hover:bg-green-700' : 'hover:bg-red-700');
-            target.classList.add(newState ? 'bg-red-600' : 'bg-green-600', newState ? 'hover:bg-red-700' : 'hover:bg-green-700');
+            target.classList.add(newState ? 'bg-red-600' : 'bg-green-600', newState ? 'hover:bg-red-700' : 'hover:bg-red-700');
 
         } catch (error) {
             console.error("Errore nell'aggiornamento dello stato Draft:", error);
@@ -385,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ? availablePlayers.map(player => `
                                 <div class="flex justify-between items-center p-3 bg-gray-600 rounded-lg border border-yellow-500">
                                     <div>
-                                        <p class="text-white font-semibold">${player.name} (${player.role}, ${player.age} anni)</p>
+                                        <p class="text-white font-semibold">${player.name} (${player.role}, ${player.age} anni) <span class="text-red-300">(${player.type || 'N/A'})</span></p>
                                         <p class="text-sm text-yellow-300">Livello: ${player.levelRange[0]}-${player.levelRange[1]} | Costo: ${player.cost} CS</p>
                                     </div>
                                     <button data-player-id="${player.id}" 
@@ -395,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             data-player-name="${player.name}"
                                             data-player-role="${player.role}"
                                             data-player-age="${player.age}"
+                                            data-player-type="${player.type}"
                                             data-action="buy"
                                             class="bg-yellow-500 text-gray-900 text-sm px-4 py-2 rounded-lg font-bold hover:bg-yellow-400 transition duration-150">
                                         Acquista (${player.cost} CS)
@@ -443,6 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const playerName = target.dataset.playerName;
             const playerRole = target.dataset.playerRole;
             const playerAge = parseInt(target.dataset.playerAge);
+            const playerType = target.dataset.playerType; // NUOVO: Tipo
 
             userDraftMessage.textContent = `Acquisto di ${playerName} in corso...`;
             displayMessage(userDraftMessage.textContent, 'info', 'user-draft-message');
@@ -477,6 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     age: playerAge,
                     cost: playerCost,
                     level: finalLevel, // Livello acquisito
+                    type: playerType, // NUOVO: Tipo
+                    isCaptain: false // Assicurati che non sia il capitano di default
                 };
 
                 // 5. Aggiorna Firestore
@@ -497,6 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Ricarica la lista per mostrare che il giocatore non è più disponibile
                 renderUserDraftPanel();
+                document.dispatchEvent(new CustomEvent('dashboardNeedsUpdate'));
 
             } catch (error) {
                 console.error("Errore durante l'acquisto:", error);
@@ -520,14 +539,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // 1. Raccogli i valori
         const name = document.getElementById('player-name').value.trim();
         const role = document.getElementById('player-role').value;
+        const type = document.getElementById('player-type').value; // NUOVO: Tipo
         const age = parseInt(document.getElementById('player-age').value);
         const levelMin = parseInt(document.getElementById('player-level-min').value);
         const levelMax = parseInt(document.getElementById('player-level-max').value);
         const cost = parseInt(document.getElementById('player-cost').value);
         
-        // ... (Validazione come prima) ...
-        if (!name || !role || isNaN(age) || isNaN(levelMin) || isNaN(levelMax) || isNaN(cost) || age < 15 || age > 50 || levelMin < 1 || levelMin > 20 || levelMax < 1 || levelMax > 20 || levelMin > levelMax || cost < 1) {
-             displayMessage("Errore: controlla che tutti i campi siano compilati e validi (Età 15-50, Livello 1-20, LivMin <= LivMax, Costo >= 1).", 'error');
+        // ... (Validazione) ...
+        if (!name || !role || !type || isNaN(age) || isNaN(levelMin) || isNaN(levelMax) || isNaN(cost) || age < 15 || age > 50 || levelMin < 1 || levelMin > 20 || levelMax < 1 || levelMax > 20 || levelMin > levelMax || cost < 1) {
+             displayMessage("Errore: controlla che tutti i campi (incluso Tipologia) siano compilati e validi (Età 15-50, Livello 1-20, LivMin <= LivMax, Costo >= 1).", 'error');
              return;
         }
 
@@ -536,6 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const newPlayer = {
             name,
             role,
+            type, // NUOVO: Tipo
             age,
             levelRange: [levelMin, levelMax],
             cost,
@@ -563,6 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Pulisci i campi
         document.getElementById('player-name').value = '';
         document.getElementById('player-role').value = '';
+        document.getElementById('player-type').value = ''; // Pulisci il tipo
         document.getElementById('player-age').value = '';
         document.getElementById('player-level-min').value = '';
         document.getElementById('player-level-max').value = '';
@@ -578,7 +600,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 1. Genera valori casuali
         const roles = ['P', 'D', 'C', 'A'];
+        const types = ['Potenza', 'Tecnica', 'Velocita']; // Lista di tipi
+        
         const randomRole = roles[getRandomInt(0, roles.length - 1)];
+        const randomType = types[getRandomInt(0, types.length - 1)]; // Tipo casuale
         const randomAge = getRandomInt(18, 35); 
         
         const randomLevelMax = getRandomInt(10, 20); 
@@ -588,6 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Inserisci i valori nei campi
         document.getElementById('player-role').value = randomRole;
+        document.getElementById('player-type').value = randomType; // Inserisci il tipo
         document.getElementById('player-age').value = randomAge;
         document.getElementById('player-level-min').value = randomLevelMin;
         document.getElementById('player-level-max').value = randomLevelMax;

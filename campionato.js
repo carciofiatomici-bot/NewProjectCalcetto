@@ -37,6 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Helper per mostrare messaggi di stato.
+     * @param {string} message - Il testo del messaggio.
+     * @param {string} type - 'success', 'error', o 'info'.
      */
     const displayConfigMessage = (message, type) => {
         const msgElement = document.getElementById('championship-message');
@@ -59,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const getRandomInt = window.getRandomInt; // Usa il getter globale
 
 
-    // --- NUOVA LOGICA: FUNZIONI FORMA E PUNTEGGIO TATTICO ---
+    // --- LOGICA FORMA E PUNTEGGIO TATTICO ---
     
     /**
      * Genera un modificatore di forma casuale tra -3 e +3.
@@ -91,7 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return Math.max(1, Math.round(avgLevel)); 
     };
 
-    // --- FINE NUOVA LOGICA ---
+    // --- FINE LOGICA FORMA ---
     
     /**
      * Funzione principale per disegnare l'interfaccia Campionato.
@@ -112,7 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1. Carica stati
             const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
             const configDoc = await getDoc(configDocRef);
-            let draftOpen = configDoc.exists() ? (configDoc.data().isDraftOpen || false) : false;
+            const configData = configDoc.exists() ? configDoc.data() : {};
+
+            let draftOpen = configData.isDraftOpen || false;
+            let marketOpen = configData.isMarketOpen || false; 
+            let isSeasonOver = configData.isSeasonOver || false; // STATO STAGIONE
 
             const teamsCollectionRef = collection(db, TEAMS_COLLECTION_PATH);
             const teamsSnapshot = await getDocs(teamsCollectionRef);
@@ -144,6 +150,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.fetchAllTeamLogos) {
                  await window.fetchAllTeamLogos();
             }
+            
+            const isReadyForEnd = isFinished && !isSeasonOver;
+            
+            // CONDIZIONE CRITICA PER GENERARE: Deve essere in Pausa E avere abbastanza squadre.
+            const canGenerate = isSeasonOver && numTeamsParticipating >= 2;
+
+            // --- Elemento di stato campionato ---
+            const statusText = isSeasonOver ? 'TERMINATO (Pausa)' : 'IN CORSO';
+            const statusClass = isSeasonOver ? 'bg-red-900 border-red-500 text-red-400' : 'bg-green-900 border-green-500 text-green-400';
 
 
             // Renderizza il pannello
@@ -153,7 +168,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     <h3 class="text-xl font-bold text-orange-400 border-b border-gray-600 pb-2">Stato Generale</h3>
                     <div class="grid grid-cols-2 gap-4">
                         <p class="text-gray-300">Squadre partecipanti: <span class="font-bold text-yellow-400">${numTeamsParticipating}</span></p>
-                        <p class="text-gray-300">Draft: <span class="font-bold ${draftOpen ? 'text-green-500' : 'text-red-400'}">${draftOpen ? 'APERTO' : 'CHIUSO'}</span></p>
+                        <p class="text-gray-300">Draft Aperto: <span class="font-bold ${draftOpen ? 'text-green-500' : 'text-red-400'}">${draftOpen ? 'SI' : 'NO'}</span></p>
+                        <p class="text-gray-300">Mercato Aperto: <span class="font-bold ${marketOpen ? 'text-green-500' : 'text-red-400'}">${marketOpen ? 'SI' : 'NO'}</span></p>
+                        
+                        <!-- INDICATORE DI STATO DEL CAMPIONATO -->
+                        <div class="col-span-2 p-3 rounded-lg border-2 ${statusClass} text-center font-extrabold shadow-md">
+                            Stagione: ${statusText}
+                        </div>
                     </div>
 
                     <h3 class="text-xl font-bold text-orange-400 border-b border-gray-600 pb-2 pt-4">Regole Generali</h3>
@@ -180,23 +201,43 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     <button id="btn-generate-schedule"
                             class="w-full bg-red-600 text-white font-extrabold py-3 rounded-lg shadow-xl hover:bg-red-700 transition duration-150 transform hover:scale-[1.01]"
-                            ${numTeamsParticipating < 2 ? 'disabled' : ''}>
-                        Genera Nuovo Calendario (Andata & Ritorno)
+                            ${canGenerate ? '' : 'disabled'}>
+                        Genera Nuovo Calendario (Avvia nuova stagione)
                     </button>
+                    ${!canGenerate 
+                        ? `<p class="text-red-400 text-center text-sm font-semibold">${!isSeasonOver ? 'Termina il campionato attuale' : (numTeamsParticipating < 2 ? 'Flagga almeno 2 squadre' : 'Errore Sconosciuto')}</p>` 
+                        : (isSeasonOver ? `<p class="text-green-400 text-center text-sm font-semibold">Stagione conclusa. Pronto per generare il nuovo calendario.</p>` : '')
+                    }
 
-                    ${numTeamsParticipating < 2 ? '<p class="text-red-400 text-center text-sm font-semibold">Flagga almeno 2 squadre per generare il calendario.</p>' : ''}
                     
-                    <div class="mt-4 p-4 bg-gray-700 rounded-lg border border-gray-600 space-y-3">
-                        <p class="text-white font-semibold">Prossima Azione:</p>
-                        ${isFinished 
-                            ? `<p class="text-green-400 font-bold">Campionato Terminato! Totale Giornate: ${totalRounds}</p>`
-                            : `<p class="text-yellow-300 font-bold">Simula Giornata ${nextRoundNumber} di ${totalRounds}</p>`
-                        }
+                    <!-- PULSANTE TERMINA CAMPIONATO / SIMULA -->
+                    <div class="mt-4 p-4 bg-gray-700 rounded-lg border border-red-500 space-y-3">
+                         <p class="text-white font-semibold">Prossima Azione:</p>
+                         ${isSeasonOver 
+                            ? `<p class="text-yellow-300 font-bold">Stagione TERMINATA. Genera un nuovo calendario per iniziare la prossima.</p>`
+                            : isFinished 
+                                ? `<p class="text-green-400 font-bold">Campionato Concluso! Premi SOTTO per assegnare i premi.</p>`
+                                : `<p class="text-yellow-300 font-bold">Simula Giornata ${nextRoundNumber} di ${totalRounds}</p>`
+                         }
                         
                         <button id="btn-simulate-round"
                                 class="w-full bg-red-500 text-white font-extrabold py-2 rounded-lg shadow-md hover:bg-red-600 transition duration-150 transform hover:scale-[1.01]"
-                                ${isFinished || schedule.length === 0 ? 'disabled' : ''}>
+                                ${isFinished || schedule.length === 0 || isSeasonOver ? 'disabled' : ''}>
                             Simula Prossima Partita
+                        </button>
+                        
+                        <!-- PULSANTE CONFERMA: TERMINA CON PREMI -->
+                        <button data-action="end-season"
+                                class="w-full bg-red-800 text-white font-extrabold py-2 rounded-lg shadow-md hover:bg-red-900 transition duration-150 transform hover:scale-[1.01] mb-2"
+                                ${!isReadyForEnd ? 'disabled' : ''}>
+                            TERMINA CAMPIONATO (Assegna Premi & Livelli)
+                        </button>
+
+                        <!-- PULSANTE CONFERMA: TERMINA SENZA PREMI (TEST) -->
+                        <button data-action="test-reset"
+                                class="w-full bg-orange-500 text-white font-extrabold py-2 rounded-lg shadow-md hover:bg-orange-600 transition duration-150 transform hover:scale-[1.01]"
+                                ${isFinished || schedule.length === 0 || isSeasonOver ? '' : 'disabled'}> 
+                            TERMINA SENZA PREMI (Solo Test)
                         </button>
                     </div>
 
@@ -214,11 +255,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             
-            // Cabla gli ascoltatori
+            // Aggiungi un listener delegato per i pulsanti di terminazione
+            const seasonEndContainer = championshipToolsContainer.querySelector('.space-y-3');
+            if (seasonEndContainer) {
+                seasonEndContainer.addEventListener('click', handleTerminationButtons);
+            }
+
+
+            // Cabla gli ascoltatori rimanenti
             document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings);
-            document.getElementById('btn-generate-schedule').addEventListener('click', () => generateSchedule(participatingTeams));
-            if (!isFinished && schedule.length > 0) {
-                 document.getElementById('btn-simulate-round').addEventListener('click', () => simulateNextRound(schedule, allTeams)); // Passa ALL_TEAMS per l'aggiornamento classifica
+            
+            // La generazione è permessa solo se canGenerate è true
+            if (canGenerate) {
+                 document.getElementById('btn-generate-schedule').addEventListener('click', () => generateSchedule(participatingTeams));
+            }
+            
+            if (!isFinished && schedule.length > 0 && !isSeasonOver) {
+                 document.getElementById('btn-simulate-round').addEventListener('click', () => simulateNextRound(schedule, allTeams));
             }
 
         } catch (error) {
@@ -228,10 +281,181 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     /**
+     * Gestisce i click sui pulsanti di terminazione e mostra la conferma.
+     */
+    const handleTerminationButtons = (e) => {
+        const target = e.target;
+        const action = target.dataset.action;
+        
+        if (action === 'end-season' && !target.disabled) {
+            confirmSeasonEnd(false); // False = non è solo per test
+        } else if (action === 'test-reset' && !target.disabled) {
+            confirmSeasonEnd(true); // True = è per test
+        }
+    };
+    
+    /**
+     * Mostra la modale di conferma per la terminazione del campionato.
+     * @param {boolean} isTestMode - True se è il reset di test, False se è la terminazione ufficiale.
+     */
+    const confirmSeasonEnd = (isTestMode) => {
+        const message = isTestMode
+            ? "ATTENZIONE: Stai per terminare il campionato SENZA assegnare crediti o livellare gli allenatori. Il calendario verrà eliminato. Continuare?"
+            : "AZIONE CRITICA: Stai per terminare la stagione UFFICIALMENTE. Premi, crediti e progressione allenatori verranno assegnati. Il calendario verrà eliminato. Continuare?";
+        
+        const title = isTestMode ? "Conferma Reset Campionato (TEST)" : "Conferma Chiusura Stagione Ufficiale";
+        
+        // Simulo una modale usando window.prompt (per semplicità nell'ambiente a file unico)
+        const confirmation = prompt(`${title}\n\n${message}\n\nDigita 'SI' per confermare:`);
+        
+        if (confirmation && confirmation.toUpperCase() === 'SI') {
+            if (isTestMode) {
+                handleSeasonEndForTesting();
+            } else {
+                handleSeasonEnd();
+            }
+        } else if (confirmation !== null) {
+            displayConfigMessage("Azione annullata dall'Admin.", 'info');
+        }
+    };
+
+    /**
+     * Funzione principale per terminare il campionato, assegnare premi e livellare gli allenatori.
+     */
+    const handleSeasonEnd = async () => {
+        const button = document.querySelector('[data-action="end-season"]');
+        if (button) button.disabled = true;
+        
+        displayConfigMessage("Terminazione Campionato in corso: Calcolo premi e progressione allenatori...", 'info');
+        
+        const { doc, setDoc, getDoc, updateDoc, collection, getDocs, deleteDoc } = firestoreTools;
+        const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
+        const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+        const leaderboardDocRef = doc(db, LEADERBOARD_COLLECTION_PATH, LEADERBOARD_DOC_ID);
+        
+        try {
+            // 1. Carica la classifica finale
+            const leaderboardDoc = await getDoc(leaderboardDocRef);
+            if (!leaderboardDoc.exists() || !leaderboardDoc.data().standings || leaderboardDoc.data().standings.length === 0) {
+                 throw new Error("Classifica non trovata o vuota. Impossibile assegnare i premi.");
+            }
+            const standings = leaderboardDoc.data().standings;
+            const numTeams = standings.length;
+            
+            // 2. Determina le ricompense in Crediti Seri (CS) per posizione
+            const rewardsMap = new Map(); // Mappa: teamId -> reward amount
+
+            standings.forEach((team, index) => {
+                let reward;
+                // Le prime 3 (index 0, 1, 2)
+                if (index < 3) { 
+                    reward = 100;
+                } 
+                // Le ultime 3 (index numTeams-3, numTeams-2, numTeams-1)
+                else if (index >= numTeams - 3) { 
+                    reward = 200;
+                }
+                // Tutte le altre
+                else {
+                    reward = 150;
+                }
+                rewardsMap.set(team.teamId, reward);
+            });
+
+            // 3. Processa tutte le squadre: Assegna crediti e tenta la progressione allenatore
+            const teamsCollectionRef = collection(db, TEAMS_COLLECTION_PATH);
+            const teamsSnapshot = await getDocs(teamsCollectionRef);
+            
+            let successfulLevelUps = 0;
+
+            for (const docSnapshot of teamsSnapshot.docs) {
+                const teamData = docSnapshot.data();
+                const teamId = docSnapshot.id;
+                
+                const reward = rewardsMap.get(teamId) || 150; // Usa 150 default se non in classifica (es. squadre non partecipanti)
+                const currentBudget = teamData.budget || 0;
+                const currentCoach = teamData.coach || { name: 'Sconosciuto', level: 0, xp: 0 };
+                
+                let coachLevel = currentCoach.level;
+
+                // 20% di possibilità di salire di livello (solo se l'allenatore è >= 1)
+                if (coachLevel >= 1 && getRandomInt(1, 100) <= 20) {
+                    coachLevel += 1;
+                    successfulLevelUps++;
+                }
+                
+                // Aggiorna la squadra su Firestore
+                await updateDoc(doc(db, TEAMS_COLLECTION_PATH, teamId), {
+                    budget: currentBudget + reward,
+                    coach: {
+                        ...currentCoach,
+                        level: coachLevel,
+                    }
+                });
+            }
+            
+            // 4. Pulisci il calendario (elimina il documento)
+            await deleteDoc(scheduleDocRef);
+            
+            // 5. Aggiorna lo stato del campionato a "Terminato/Pausa"
+            await setDoc(configDocRef, { isSeasonOver: true, isDraftOpen: false, isMarketOpen: false }, { merge: true });
+            
+            displayConfigMessage(`Campionato TERMINATO! Assegnati premi a ${numTeams} squadre. ${successfulLevelUps} allenatori sono saliti di livello (20% chance). Calendario eliminato.`, 'success');
+            
+            // Ricarica il pannello Admin per aggiornare lo stato e i pulsanti
+            renderChampionshipPanel();
+
+
+        } catch (error) {
+            console.error("Errore durante la terminazione del campionato:", error);
+            displayConfigMessage(`Errore critico durante la terminazione: ${error.message}`, 'error');
+            if (button) button.disabled = false;
+        }
+    };
+    
+    /**
+     * Termina il campionato SENZA assegnare premi o livellare allenatori.
+     */
+    const handleSeasonEndForTesting = async () => {
+        const button = document.querySelector('[data-action="test-reset"]');
+        if (button) button.disabled = true;
+        
+        displayConfigMessage("Terminazione Campionato forzata per testing... (NESSUN PREMIO O LIVELLO ASSEGNATO)", 'info');
+        
+        // Ricarica i riferimenti a Firestore all'interno dello scope
+        const { doc, setDoc, deleteDoc } = firestoreTools;
+        const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
+        const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+
+        try {
+            // 1. Pulisci il calendario (elimina il documento)
+            await deleteDoc(scheduleDocRef);
+            
+            // 2. Aggiorna lo stato del campionato a "Terminato/Pausa"
+            await setDoc(configDocRef, { isSeasonOver: true, isDraftOpen: false, isMarketOpen: false }, { merge: true });
+            
+            displayConfigMessage(`Campionato TERMINATO per TESTING. Calendario eliminato. Budget e Livelli Allenatori NON modificati.`, 'success');
+            
+            // Ricarica il pannello Admin per aggiornare lo stato e i pulsanti
+            renderChampionshipPanel();
+
+        } catch (error) {
+            console.error("Errore durante la terminazione per testing:", error);
+            displayConfigMessage(`Errore critico durante la terminazione per testing: ${error.message}`, 'error');
+            if (button) button.disabled = false;
+        }
+    };
+
+
+    /**
      * Algoritmo Round-Robin per generare le partite di andata e ritorno.
-     * Accetta solo le squadre partecipanti.
      */
     const generateSchedule = async (teams) => {
+        // Ricarica i riferimenti a Firestore all'interno dello scope
+        const { doc, setDoc, deleteDoc, collection, getDocs } = firestoreTools;
+        const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
+        const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
+
         if (!teams || teams.length < 2) {
             return displayConfigMessage("Errore: Necessarie almeno 2 squadre flaggate per generare il calendario.", 'error');
         }
@@ -300,10 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 4. Salvataggio su Firestore
         try {
-            const { doc, setDoc } = firestoreTools;
-            const scheduleDocRef = doc(db, SCHEDULE_COLLECTION_PATH, SCHEDULE_DOC_ID);
-            
-            // Inizializza la classifica quando generi il calendario
+            // Salviamo il calendario
             await setDoc(scheduleDocRef, { 
                 matches: finalSchedule,
                 generationDate: new Date().toISOString(),
@@ -313,6 +534,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Inizializza la classifica A ZERO SOLO per le squadre partecipanti
             await initializeLeaderboard(teams);
+            
+            // Imposta lo stato della stagione su IN CORSO (false)
+            await setDoc(configDocRef, { isSeasonOver: false }, { merge: true });
             
             displayConfigMessage(`Calendario di ${finalSchedule.length} giornate (Andata/Ritorno) generato e salvato per ${teams.length} squadre flaggate! Classifica azzerata.`, 'success');
             button.disabled = false;
@@ -327,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     /**
-     * Inizializza le statistiche di una squadra (Leaderboard) con tutte le squadre partecipanti a zero.
+     * Inizializza le statistiche di una squadra (fallback).
      */
     const initializeLeaderboard = async (teams) => {
         const { doc, setDoc } = firestoreTools;
@@ -526,19 +750,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let previewHtml = `<p class="text-white font-semibold mb-3">Calendario Attuale (${schedule.length} Giornate):</p>`;
 
-        const roundsToShow = schedule.slice(0, 5);
-        if (schedule.length > 5) roundsToShow.push(schedule[schedule.length - 1]);
-        
+        // LOGICA DI VISUALIZZAZIONE CORRETTA:
+        // Se ci sono 6 o meno giornate, le mostriamo tutte.
+        // Altrimenti, mostriamo le prime 5 e l'ultima con un indicatore.
+        const roundsToShow = schedule.length <= 6 ? schedule : [
+            ...schedule.slice(0, 5),
+            schedule[schedule.length - 1]
+        ];
+
+        const showElipsis = schedule.length > 6;
+
+
         roundsToShow.forEach(roundData => {
-            const isPlayed = roundData.matches.every(match => match.result !== null);
+            const isPlayed = roundData.matches.every(match => match.result === null) ? false : true; // Determina se è giocata
             const roundColor = isPlayed ? 'text-green-300' : 'text-yellow-300';
-            const roundBg = roundData.matches[0].type === 'Ritorno' ? 'bg-indigo-700' : 'bg-gray-600';
+            const roundBg = roundData.matches.length > 0 && roundData.matches[0].type === 'Ritorno' ? 'bg-indigo-700' : 'bg-gray-600';
 
 
             previewHtml += `
                 <div class="mb-2 p-2 rounded-md ${roundBg}">
-                    <p class="font-bold text-sm ${roundColor}">Giornata ${roundData.round} (${roundData.matches[0].type}) - ${isPlayed ? 'GIOCATA' : 'DA GIOCARE'}</p>
-                    <ul class="text-xs text-white mt-1 space-y-0.5">
+                    <p class="font-bold text-sm ${roundColor}">Giornata ${roundData.round} (${roundData.matches.length > 0 ? roundData.matches[0].type : 'N/A'}) - ${isPlayed ? 'GIOCATA' : 'DA GIOCARE'}</p>
+                    <ul class="mt-2 space-y-1 text-white">
                         ${roundData.matches.map(match => `
                             <li class="flex items-center justify-between">
                                 <!-- SQUADRA CASA: Logo a Sinistra -->
@@ -559,8 +791,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
         });
         
-        if (schedule.length > 6) {
-             previewHtml += `<p class="text-center text-gray-400 mt-2">... e ${schedule.length - 6} altre giornate...</p>`;
+        if (showElipsis) {
+             previewHtml += `<p class="text-center text-gray-400 mt-2">... e ${schedule.length - roundsToShow.length} altre giornate...</p>`;
         }
 
         return previewHtml;
@@ -584,4 +816,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Ascolta l'evento lanciato da admin.js quando è il momento di mostrare il pannello Campionato
     document.addEventListener('championshipPanelLoaded', renderChampionshipPanel);
+    
+    // Espongo le funzioni per l'uso in admin.js
+    window.handleSeasonEnd = handleSeasonEnd;
+    window.handleSeasonEndForTesting = handleSeasonEndForTesting;
 });

@@ -43,6 +43,28 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Ruoli totali
     const ROLES = ['P', 'D', 'C', 'A'];
+    
+    // Mappa per l'ordinamento dei ruoli
+    const ROLE_ORDER = { 'P': 0, 'D': 1, 'C': 2, 'A': 3 };
+    
+    // NUOVO: Mappa delle icone di tipologia (DEVE ESSERE COERENTE CON interfaccia.js)
+    const TYPE_ICONS = {
+        // Potenza (Braccio muscoloso)
+        'Potenza': { icon: 'fas fa-hand-rock', color: 'text-red-500' },
+        // Tecnica (Cervello / intelligenza)
+        'Tecnica': { icon: 'fas fa-brain', color: 'text-blue-500' },
+        // Velocità (Fulmine)
+        'Velocita': { icon: 'fas fa-bolt', color: 'text-yellow-500' },
+        'N/A': { icon: 'fas fa-question-circle', color: 'text-gray-400' }
+    };
+    
+    // Definizione delle relazioni per la legenda (Potenza > Tecnica > Velocità > Potenza)
+    const TYPE_RELATIONSHIPS = [
+        { attacker: 'Potenza', defender: 'Velocita', weaker: 'Tecnica', attackerIcon: TYPE_ICONS['Potenza'], defenderIcon: TYPE_ICONS['Velocita'], weakerIcon: TYPE_ICONS['Tecnica'] },
+        { attacker: 'Velocita', defender: 'Tecnica', weaker: 'Potenza', attackerIcon: TYPE_ICONS['Velocita'], defenderIcon: TYPE_ICONS['Tecnica'], weakerIcon: TYPE_ICONS['Potenza'] },
+        { attacker: 'Tecnica', defender: 'Potenza', weaker: 'Velocita', attackerIcon: TYPE_ICONS['Tecnica'], defenderIcon: TYPE_ICONS['Potenza'], weakerIcon: TYPE_ICONS['Velocita'] },
+    ];
+
 
     /**
      * Helper per mostrare messaggi di stato.
@@ -61,6 +83,26 @@ document.addEventListener('DOMContentLoaded', () => {
             msgElement.classList.add('text-yellow-400');
         }
     };
+
+    /**
+     * Rimuove il giocatore dalla sua posizione corrente (titolari o panchina).
+     * QUESTA FUNZIONE ORA È DEFINITA PIÙ IN ALTO PER EVITARE PROBLEMI DI SCOPE.
+     * @param {string} playerId - ID del giocatore da rimuovere.
+     */
+    const removePlayerFromPosition = (playerId) => {
+        // Rimuove dai titolari
+        const initialTitolariLength = currentTeamData.formation.titolari.length;
+        currentTeamData.formation.titolari = currentTeamData.formation.titolari.filter(p => p.id !== playerId);
+        const removedFromTitolari = initialTitolariLength !== currentTeamData.formation.titolari.length;
+        
+        // Rimuove dalla panchina
+        const initialPanchinaLength = currentTeamData.formation.panchina.length;
+        currentTeamData.formation.panchina = currentTeamData.formation.panchina.filter(p => p.id !== playerId);
+        const removedFromPanchina = initialPanchinaLength !== currentTeamData.formation.panchina.length;
+        
+        return removedFromTitolari || removedFromPanchina;
+    };
+
 
     /**
      * Genera la forma casuale e la applica al giocatore.
@@ -181,38 +223,77 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // -------------------------------------------------------------------
-    // MODALITÀ GESTIONE ROSA
+    // MODALITÀ GESTIONE ROSA (CON ORDINAMENTO e ASSEGNAZIONE CAPITANO)
     // -------------------------------------------------------------------
     
     const renderRosaManagement = (teamData) => {
         squadraMainTitle.textContent = "Gestione Rosa";
         squadraSubtitle.textContent = `Budget Rimanente: ${teamData.budget} Crediti Seri | Giocatori in rosa: ${teamData.players.length}`;
+        
+        // --- LOGICA DI ORDINAMENTO ---
+        const sortedPlayers = [...teamData.players].sort((a, b) => {
+            // 1. Ordina per Ruolo (P, D, C, A)
+            const roleComparison = ROLE_ORDER[a.role] - ROLE_ORDER[b.role];
+            if (roleComparison !== 0) {
+                 return roleComparison;
+            }
+            // 2. Ordina per Livello (dal più alto al più basso)
+            return b.level - a.level;
+        });
+        // --- FINE LOGICA DI ORDINAMENTO ---
 
         squadraToolsContainer.innerHTML = `
+            
             <div class="bg-gray-700 p-6 rounded-lg border border-green-500">
-                <h3 class="text-2xl font-bold text-green-400 mb-4">I Tuoi Calciatori</h3>
+                <h3 class="text-2xl font-bold text-green-400 mb-4">I Tuoi Calciatori (Ordinati per Ruolo e Livello)</h3>
                 <div id="player-list-message" class="text-center mb-4 text-green-500"></div>
                 <div id="player-list" class="space-y-3">
-                    ${teamData.players.length === 0 
+                    ${sortedPlayers.length === 0 
                         ? '<p class="text-gray-400">Nessun calciatore in rosa. Vai al Draft per acquistarne!</p>'
-                        : teamData.players.map(player => {
+                        : sortedPlayers.map(player => {
                             // Calcoliamo il rimborso solo per i giocatori che hanno avuto un costo > 0
                             const refundCost = player.cost > 0 ? Math.floor(player.cost / 2) : 0;
+                            const isCaptain = player.id === teamData.captainId; // Usa l'ID Capitano salvato
+                            const captainMarker = isCaptain ? ' (CAPITANO)' : '';
+                            const isCaptainClass = isCaptain ? 'text-orange-400 font-extrabold' : 'text-white font-semibold';
+                            
+                            // Logica Tipologia Icona
+                            const playerType = player.type || 'N/A';
+                            const typeData = TYPE_ICONS[playerType] || TYPE_ICONS['N/A'];
+                            const typeIconHtml = `<i class="${typeData.icon} ${typeData.color} text-lg ml-2" title="Tipo: ${playerType}"></i>`;
+                            
+                            // Pulsante Capitano
+                            const captainButton = isCaptain 
+                                ? `<button class="bg-gray-500 text-gray-300 text-sm px-4 py-2 rounded-lg cursor-default shadow-md" disabled>Capitano Attuale</button>`
+                                : `<button data-player-id="${player.id}" 
+                                        data-player-name="${player.name}"
+                                        data-action="assign-captain"
+                                        class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md">
+                                    Nomina Capitano
+                                </button>`;
+
 
                             return `
-                                <div class="flex justify-between items-center p-4 bg-gray-800 rounded-lg border border-green-700">
-                                    <div>
-                                        <span class="text-white font-semibold">${player.name} <span class="text-yellow-400">(${player.role})</span></span>
+                                <div class="flex flex-col sm:flex-row justify-between items-center p-4 bg-gray-800 rounded-lg border border-green-700">
+                                    <div class="mb-2 sm:mb-0 sm:w-1/2">
+                                        <span class="${isCaptainClass}">${player.name}${captainMarker}</span> 
+                                        <span class="text-yellow-400">(${player.role})</span>
+                                        ${typeIconHtml} <!-- INSERIMENTO ICONA TIPOLOGIA -->
                                         <p class="text-sm text-gray-400">Livello: ${player.level} | Acquistato per: ${player.cost} CS</p>
                                     </div>
-                                    <button data-player-id="${player.id}" 
-                                            data-original-cost="${player.cost}"
-                                            data-refund-cost="${refundCost}"
-                                            data-player-name="${player.name}"
-                                            data-action="licenzia"
-                                            class="bg-red-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-red-700 transition duration-150 shadow-md">
-                                        Licenzia (Rimborso: ${refundCost} CS)
-                                    </button>
+                                    <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 w-full sm:w-auto items-center">
+                                        
+                                        ${captainButton}
+
+                                        <button data-player-id="${player.id}" 
+                                                data-original-cost="${player.cost}"
+                                                data-refund-cost="${refundCost}"
+                                                data-player-name="${player.name}"
+                                                data-action="licenzia"
+                                                class="bg-red-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-red-700 transition duration-150 shadow-md">
+                                            Licenzia (Rimborso: ${refundCost} CS)
+                                        </button>
+                                    </div>
                                 </div>
                             `;
                           }).join('')
@@ -223,10 +304,80 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const playerList = document.getElementById('player-list');
         if (playerList) {
-            playerList.addEventListener('click', handleRosaAction);
+            // Delega l'evento a tutte le azioni
+            playerList.addEventListener('click', (e) => {
+                 const target = e.target;
+                 if (target.dataset.action === 'licenzia' || target.dataset.action === 'confirm-licenzia') {
+                     handleRosaAction(e);
+                 } else if (target.dataset.action === 'assign-captain') {
+                     handleCaptainAssignment(target.dataset.playerId, target.dataset.playerName);
+                 }
+            });
         }
     };
     
+    /**
+     * Gestisce l'assegnazione del Capitano a un giocatore esistente.
+     * @param {string} newCaptainId - ID del giocatore da nominare Capitano.
+     * @param {string} newCaptainName - Nome del giocatore.
+     */
+    const handleCaptainAssignment = async (newCaptainId, newCaptainName) => {
+        const msgContainerId = 'player-list-message';
+        displayMessage(msgContainerId, `Tentativo di nominare ${newCaptainName} Capitano...`, 'info');
+
+        try {
+            const { doc, getDoc, updateDoc } = firestoreTools;
+            const teamDocRef = doc(db, TEAMS_COLLECTION_PATH, currentTeamId);
+
+            // 1. Aggiorna la rosa interna: rimuove il flag isCaptain dal vecchio e lo aggiunge al nuovo.
+            const updatedPlayers = currentTeamData.players.map(player => {
+                 // Aggiorna il flag isCaptain nel giocatore designato
+                 const isNewCaptain = player.id === newCaptainId;
+                 return {
+                     ...player,
+                     // Rimuove il flag 'isCaptain' da tutti e lo assegna solo al nuovo.
+                     isCaptain: isNewCaptain ? true : (player.isCaptain ? false : player.isCaptain),
+                 };
+            });
+            
+            // 2. Aggiorna Firestore
+            await updateDoc(teamDocRef, {
+                captainId: newCaptainId,
+                players: updatedPlayers,
+                // Aggiorna anche la formazione per coerenza
+                formation: {
+                    ...currentTeamData.formation,
+                    titolari: currentTeamData.formation.titolari.map(p => ({
+                        ...p,
+                        isCaptain: p.id === newCaptainId ? true : false
+                    })),
+                    panchina: currentTeamData.formation.panchina.map(p => ({
+                        ...p,
+                        isCaptain: p.id === newCaptainId ? true : false
+                    })),
+                }
+            });
+            
+            // 3. Aggiorna i dati globali locali (CRUCIALE)
+            currentTeamData.captainId = newCaptainId;
+            currentTeamData.players = updatedPlayers; 
+            
+            displayMessage(msgContainerId, `${newCaptainName} è il nuovo Capitano!`, 'success');
+            
+            // Ricarica solo la vista Rosa con i dati aggiornati
+            loadTeamDataAndRender('rosa'); 
+            
+            // Aggiorna la dashboard per riflettere il cambio
+            document.dispatchEvent(new CustomEvent('dashboardNeedsUpdate')); 
+
+
+        } catch (error) {
+            console.error("Errore nell'assegnazione del Capitano:", error);
+            displayMessage(msgContainerId, `Errore: Impossibile nominare ${newCaptainName} Capitano. ${error.message}`, 'error');
+        }
+    };
+    
+    // Ritorna alla Dashboard Utente con aggiornamento
     const handleRosaAction = async (event) => {
         const target = event.target;
         const msgContainerId = 'player-list-message';
@@ -238,6 +389,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const refundCost = parseInt(target.dataset.refundCost);
         
         if (target.dataset.action === 'licenzia') {
+            
+            // Prevenire il licenziamento del Capitano
+            if (playerId === currentTeamData.captainId) {
+                 displayMessage(msgContainerId, `ERRORE: Non puoi licenziare il Capitano attuale! Assegna prima un nuovo Capitano.`, 'error');
+                 return;
+            }
+            
             target.textContent = `CONFERMA? (+${refundCost} CS)`;
             target.classList.remove('bg-red-600');
             target.classList.add('bg-orange-500');
@@ -266,8 +424,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 let docRefToUpdate;
                 let returnDestination;
                 
-                // Variabile per sapere se il documento esisteva
                 const docExists = draftDoc.exists() || marketDoc.exists();
+                
+                // Recupera i dati completi del giocatore dalla rosa corrente
+                const playerInRosa = currentTeamData.players.find(p => p.id === playerId);
+                if (!playerInRosa) {
+                    throw new Error("Dati giocatore non trovati nella rosa!");
+                }
 
                 if (draftDoc.exists()) {
                     // Il giocatore era nel Draft
@@ -281,11 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // --- TRANSAZIONE 1: Aggiorna il documento della Squadra ---
                 
-                // Recupera i dati completi del giocatore dalla rosa corrente
-                const playerInRosa = currentTeamData.players.find(p => p.id === playerId);
-                if (!playerInRosa) {
-                    throw new Error("Dati giocatore non trovati nella rosa!");
-                }
                 
                 const teamDoc = await getDoc(teamDocRef);
                 const teamData = teamDoc.data();
@@ -316,23 +474,30 @@ document.addEventListener('DOMContentLoaded', () => {
                         teamId: null,
                     });
                 } else {
-                    // Caso B: Il giocatore è di base e non esisteva in Market/Draft (docExists = false) -> usiamo setDoc per crearlo nel Mercato.
+                    // Caso B: Il giocatore è di base e non esisteva in Market/Draft -> usiamo setDoc per crearlo nel Mercato.
                     
-                    // Creiamo una versione pulita del giocatore per l'inserimento nel Mercato
-                    // Se levelRange non è definito, usiamo il livello base come range.
-                    const finalLevelRange = playerInRosa.levelRange || [playerInRosa.level, playerInRosa.level];
-
-                    await setDoc(docRefToUpdate, {
+                    // Costruiamo l'oggetto completo e valido per setDoc, garantendo che non ci siano undefined.
+                    const finalLevelRange = playerInRosa.levelRange && Array.isArray(playerInRosa.levelRange) ? playerInRosa.levelRange : [playerInRosa.level || 1, playerInRosa.level || 1];
+                    const finalCost = playerInRosa.cost !== undefined && playerInRosa.cost !== null ? playerInRosa.cost : 0;
+                    const finalAge = playerInRosa.age !== undefined && playerInRosa.age !== null ? playerInRosa.age : 25;
+                    const finalRole = playerInRosa.role || 'C';
+                    const finalName = playerInRosa.name || 'Sconosciuto';
+                    const finalType = playerInRosa.type || window.getRandomType();
+                    
+                    const playerDocumentData = {
                         id: playerId,
-                        name: playerInRosa.name,
-                        role: playerInRosa.role,
-                        age: playerInRosa.age,
-                        cost: playerInRosa.cost,
+                        name: finalName,
+                        role: finalRole,
+                        type: finalType, // NUOVO: Tipo
+                        age: finalAge,
+                        cost: finalCost,
                         levelRange: finalLevelRange, 
                         isDrafted: false,
                         teamId: null,
                         creationDate: new Date().toISOString()
-                    });
+                    };
+
+                    await setDoc(docRefToUpdate, playerDocumentData);
                 }
                 
                 // Ricarica le liste Admin (se l'Admin le sta guardando)
@@ -342,6 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 displayMessage(msgContainerId, `Giocatore ${playerName} licenziato! Rimborsati ${refundCost} CS. Tornato nel ${returnDestination}.`, 'success');
                 loadTeamDataAndRender('rosa');
+                document.dispatchEvent(new CustomEvent('dashboardNeedsUpdate'));
 
             } catch (error) {
                 console.error("Errore durante il licenziamento:", error);
@@ -358,12 +524,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // -------------------------------------------------------------------
     // MODALITÀ GESTIONE FORMAZIONE (Drag & Drop Implementato)
-    // ... (Logica di formazione invariata per brevità) ...
+    // -------------------------------------------------------------------
     
     const renderFormazioneManagement = (teamData) => {
         squadraMainTitle.textContent = "Gestione Formazione";
         squadraSubtitle.textContent = `Modulo Attuale: ${teamData.formation.modulo} | Trascina i giocatori in campo! (Forma attiva)`;
         
+        // Generazione HTML per la Legenda GRAFICA
+        const legendHtml = `
+            <div class="flex flex-col items-center justify-center space-y-4 pt-2">
+                <div class="flex items-center space-x-6 text-xl">
+                    <i class="${TYPE_ICONS['Potenza'].icon} ${TYPE_ICONS['Potenza'].color} font-extrabold"></i>
+                    <i class="${TYPE_ICONS['Tecnica'].icon} ${TYPE_ICONS['Tecnica'].color} font-extrabold"></i>
+                    <i class="${TYPE_ICONS['Velocita'].icon} ${TYPE_ICONS['Velocita'].color} font-extrabold"></i>
+                </div>
+                
+                <div class="flex items-center justify-center space-x-3 text-sm text-gray-300 font-semibold">
+                    ${TYPE_ICONS['Potenza'].icon.split(' ')[1].replace('hand-rock', 'Pugno')} (Potenza)
+                    <i class="fas fa-angle-right text-green-400"></i>
+                    ${TYPE_ICONS['Tecnica'].icon.split(' ')[1].replace('brain', 'Cervello')} (Tecnica)
+                    <i class="fas fa-angle-right text-green-400"></i>
+                    ${TYPE_ICONS['Velocita'].icon.split(' ')[1].replace('bolt', 'Fulmine')} (Velocità)
+                    <i class="fas fa-angle-right text-green-400"></i>
+                    ${TYPE_ICONS['Potenza'].icon.split(' ')[1].replace('hand-rock', 'Pugno')} (Potenza)
+                </div>
+                                <p class="text-xs text-gray-400 mt-2">La freccia indica il tipo che vince contro l'altro. Esempio: Potenza vince contro Velocità (in coerenza con la logica futura).</p>
+            </div>
+        `;
+
         squadraToolsContainer.innerHTML = `
             <style>
                 /* STILI CSS OMAGGIO PER IL CAMPO */
@@ -445,8 +633,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                     <p id="module-description" class="text-sm text-gray-400">${MODULI[teamData.formation.modulo].description}</p>
                     
+                    <h3 class="text-xl font-bold text-indigo-400 border-b border-gray-600 pb-2 pt-4">Legenda Tipologie (Type)</h3>
+                    <div class="p-3 bg-gray-700 rounded-lg border border-gray-600 shadow-inner">
+                         ${legendHtml}
+                    </div>
+
                     <h3 class="text-xl font-bold text-indigo-400 border-b border-gray-600 pb-2 pt-4">Rosa Completa (Disponibili)</h3>
-                    <div id="full-squad-list" class="space-y-2 max-h-96 overflow-y-auto min-h-[100px] border border-gray-700 p-2 rounded-lg"
+                    <div id="full-squad-list" class="space-y-2 max-h-60 overflow-y-auto min-h-[100px] border border-gray-700 p-2 rounded-lg"
                          ondragover="event.preventDefault();"
                          ondrop="window.handleDrop(event, 'ROSALIBERA')">
                     </div>
@@ -831,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             // Aggiorna solo i dati della formazione
             // IMPORTANTE: Salviamo solo l'ID e il Livello Base/Ruolo/etc. senza i dati temporanei di 'formModifier'
-            const cleanFormation = (players) => players.map(({ id, name, role, age, cost, level }) => ({ id, name, role, age, cost, level }));
+            const cleanFormation = (players) => players.map(({ id, name, role, age, cost, level, isCaptain, type }) => ({ id, name, role, age, cost, level, isCaptain, type }));
 
             await updateDoc(teamDocRef, {
                 formation: {

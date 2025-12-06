@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const CONFIG_DOC_ID = 'settings';
     // Accesso alla funzione globale getRandomInt (assumiamo sia esposta in interfaccia.js)
     const getRandomInt = window.getRandomInt || ((min, max) => Math.floor(Math.random() * (max - min + 1)) + min); 
+    const getRandomType = window.getRandomType || (() => 'Potenza'); // Fallback sicuro
     
     const displayMessage = (message, type, elementId) => {
         const msgElement = document.getElementById(elementId);
@@ -96,8 +97,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const { doc, getDoc } = firestoreTools;
         const configDocRef = doc(db, CHAMPIONSHIP_CONFIG_PATH, CONFIG_DOC_ID);
         const configDoc = await getDoc(configDocRef);
-        let draftOpen = configDoc.exists() ? (configDoc.data().isDraftOpen || false) : false;
-        let marketOpen = configDoc.exists() ? (configDoc.data().isMarketOpen || false) : false;
+        const configData = configDoc.exists() ? configDoc.data() : {};
+
+        let draftOpen = configData.isDraftOpen || false;
+        let marketOpen = configData.isMarketOpen || false;
 
         adminDashboardContainer.innerHTML = `
             <!-- Pulsanti Navigazione Principale -->
@@ -164,6 +167,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const configDoc = await getDoc(configDocRef);
         let draftOpen = configDoc.exists() ? (configDoc.data().isDraftOpen || false) : false;
         let marketOpen = configDoc.exists() ? (configDoc.data().isMarketOpen || false) : false;
+        
+        const types = ['Potenza', 'Tecnica', 'Velocita']; // Lista per il dropdown
          
          playerManagementToolsContainer.innerHTML = `
             <!-- SEZIONE STATI APERTO/CHIUSO SEPARATI -->
@@ -209,8 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
                      <p class="text-xs text-gray-400 mt-1">Scegli dove aggiungere il giocatore: Draft (DraftPlayers) o Mercato (MarketPlayers).</p>
                  </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <!-- Campi Giocatore (Nome, Ruolo, Età, Livelli, Costo) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Campi Giocatore (Nome, Ruolo, Età, Livelli, Costo, Tipo) -->
                     <div class="flex flex-col">
                         <label class="text-gray-300 mb-1" for="player-name">Nome</label>
                         <input type="text" id="player-name" placeholder="Es: Barella" class="p-2 rounded-lg bg-gray-600 border border-yellow-600 text-white">
@@ -221,10 +226,21 @@ document.addEventListener('DOMContentLoaded', () => {
                             <option value="">Seleziona Ruolo</option><option value="P">P (Portiere)</option><option value="D">D (Difensore)</option><option value="C">C (Centrocampista)</option><option value="A">A (Attaccante)</option>
                         </select>
                     </div>
+                    
+                    <!-- NUOVO: Tipologia (Type) -->
+                    <div class="flex flex-col">
+                        <label class="text-gray-300 mb-1" for="player-type">Tipologia (Type)</label>
+                        <select id="player-type" class="p-2 rounded-lg bg-gray-600 border border-yellow-600 text-white">
+                            <option value="">Seleziona Tipo</option>
+                            ${types.map(t => `<option value="${t}">${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    
                     <div class="flex flex-col">
                         <label class="text-gray-300 mb-1" for="player-age">Età (15 - 50)</label>
                         <input type="number" id="player-age" min="15" max="50" placeholder="25" class="p-2 rounded-lg bg-gray-600 border border-yellow-600 text-white">
                     </div>
+
                     <div class="flex flex-col">
                         <label class="text-gray-300 mb-1" for="player-level-min">Liv Minimo (1 - 20)</label>
                         <input type="number" id="player-level-min" min="1" max="20" placeholder="10" class="p-2 rounded-lg bg-gray-600 border border-yellow-600 text-white">
@@ -449,7 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // Aggiorna solo la chiave specifica nel documento di configurazione
-            await setDoc(configDocRef, { [key]: newState }, { merge: true });
+            await setDoc(configDocRef, { [key]: newState, isSeasonOver: false }, { merge: true }); // Resetta isSeasonOver se si riapre qualcosa
             
             displayMessage(`Stato ${stateType} aggiornato: ${newState ? 'APERTO' : 'CHIUSO'}`, 'success', 'toggle-status-message');
             
@@ -496,11 +512,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const player = doc.data();
                 const playerId = doc.id;
                 const status = player.isDrafted ? `<span class="text-red-400">Venduto a ${player.teamId}</span>` : `<span class="text-green-400">Disponibile</span>`;
+                const playerType = player.type || 'N/A';
                 return `
                     <div class="player-item flex justify-between items-center p-2 bg-gray-600 rounded-lg text-white">
                         <div>
                             <p class="font-semibold">${player.name} (${player.role})</p>
-                            <p class="text-xs text-gray-400">Liv: ${player.levelRange[0]}-${player.levelRange[1]} | ${status}</p>
+                            <p class="text-xs text-gray-400">Liv: ${player.levelRange[0]}-${player.levelRange[1]} | Tipo: ${playerType} | ${status}</p>
                         </div>
                         <button data-player-id="${playerId}" data-action="delete"
                                 class="bg-red-600 text-white text-xs px-2 py-1 rounded-lg hover:bg-red-700 transition duration-150">
@@ -536,11 +553,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const player = doc.data();
                 const playerId = doc.id;
                 const status = player.isDrafted ? `<span class="text-red-400">Venduto a ${player.teamId}</span>` : `<span class="text-green-400">Disponibile</span>`;
+                const playerType = player.type || 'N/A';
                 return `
                     <div class="player-item flex justify-between items-center p-2 bg-gray-600 rounded-lg text-white">
                         <div>
                             <p class="font-semibold">${player.name} (${player.role})</p>
-                            <p class="text-xs text-gray-400">Liv: ${player.levelRange[0]}-${player.levelRange[1]} | ${status}</p>
+                            <p class="text-xs text-gray-400">Liv: ${player.levelRange[0]}-${player.levelRange[1]} | Tipo: ${playerType} | ${status}</p>
                         </div>
                         <button data-player-id="${playerId}" data-action="delete"
                                 class="bg-red-600 text-white text-xs px-2 py-1 rounded-lg hover:bg-red-700 transition duration-150">
@@ -569,19 +587,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetCollection = document.getElementById('target-collection').value;
         const name = document.getElementById('player-name').value.trim();
         const role = document.getElementById('player-role').value;
+        const type = document.getElementById('player-type').value;
         const age = parseInt(document.getElementById('player-age').value);
         const levelMin = parseInt(document.getElementById('player-level-min').value);
         const levelMax = parseInt(document.getElementById('player-level-max').value);
         const cost = parseInt(document.getElementById('player-cost').value);
         
         // Validazione
-        if (!name || !role || isNaN(age) || isNaN(levelMin) || isNaN(levelMax) || isNaN(cost) || age < 15 || age > 50 || levelMin < 1 || levelMin > 20 || levelMax < 1 || levelMax > 20 || levelMin > levelMax || cost < 1) {
-             displayMessage("Errore: controlla che tutti i campi siano compilati e validi (Età 15-50, Livello 1-20, LivMin <= LivMax, Costo >= 1).", 'error', msgId);
+        if (!name || !role || !type || isNaN(age) || isNaN(levelMin) || isNaN(levelMax) || isNaN(cost) || age < 15 || age > 50 || levelMin < 1 || levelMin > 20 || levelMax < 1 || levelMax > 20 || levelMin > levelMax || cost < 1) {
+             displayMessage("Errore: controlla che tutti i campi (incluso Tipologia) siano compilati e validi (Età 15-50, Livello 1-20, LivMin <= LivMax, Costo >= 1).", 'error', msgId);
              return;
         }
 
         const newPlayer = {
-            name, role, age, levelRange: [levelMin, levelMax], cost,
+            name, role, age, levelRange: [levelMin, levelMax], cost, type,
             isDrafted: false, teamId: null, creationDate: new Date().toISOString()
         };
         
@@ -617,7 +636,9 @@ document.addEventListener('DOMContentLoaded', () => {
         displayMessage("", 'success', msgId); 
         
         const roles = ['P', 'D', 'C', 'A'];
+        
         const randomRole = roles[getRandomInt(0, roles.length - 1)];
+        const randomType = getRandomType(); 
         const randomAge = getRandomInt(18, 35); 
         
         const randomLevelMax = getRandomInt(10, 20); 
@@ -626,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const randomCost = getRandomInt(20, 150); 
 
         document.getElementById('player-role').value = randomRole;
+        document.getElementById('player-type').value = randomType;
         document.getElementById('player-age').value = randomAge;
         document.getElementById('player-level-min').value = randomLevelMin;
         document.getElementById('player-level-max').value = randomLevelMax;
@@ -679,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <p class="text-lg font-bold text-white">${teamData.teamName}</p>
                             <p class="text-xs text-gray-400">ID: ${teamId}</p>
                             <p class="text-sm text-gray-400">Budget: ${teamData.budget} Crediti Seri | Rosa: ${teamData.players.length} gioc. | Creazione: ${date}</p>
+                            <p class="text-sm text-gray-400">Coach: ${teamData.coach?.name || 'N/A'} (Liv: ${teamData.coach?.level || 0})</p>
                         </div>
                         
                         <!-- Pulsanti Azioni -->
